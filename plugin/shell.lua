@@ -1,0 +1,214 @@
+local util = require("util")
+local ui = require("ui")
+
+local M = {}
+
+local RISK_PATTERNS = {
+    "rm%s+%-rf",
+    "rm%s+%-fr",
+    "dd%s+if=",
+    "mkfs",
+    "kubectl%s+delete",
+    "git%s+push%s+[^\n]*%-%-force",
+    "git%s+push%s+[^\n]*%-f%s",
+    "git%s+push",
+    "git%s+reset",
+    "git%s+rebase",
+    "git%s+checkout%s+[^\n]*%-%-force",
+    "git%s+clean%s+%-",
+    "chmod%s+%-R%s+777",
+    ">:?/dev/sd",
+    "curl%s+[^\n]*%|%s*sh",
+    "wget%s+[^\n]*%|%s*sh",
+    "DROP%s+TABLE",
+    "TRUNCATE%s+",
+    "diskutil%s+erase",
+}
+
+local function classify_shell_name(name)
+    if not name or name == "" then
+        return nil
+    end
+    name = name:lower()
+    -- basename from path
+    name = name:match("([^/\\]+)$") or name
+    if name:find("fish", 1, true) then
+        return "fish"
+    end
+    if name:find("zsh", 1, true) then
+        return "zsh"
+    end
+    if name == "bash" or name:find("bash", 1, true) then
+        return "bash"
+    end
+    if name:find("pwsh", 1, true) or name:find("powershell", 1, true) then
+        return "powershell"
+    end
+    if name == "sh" or name == "dash" then
+        return "bash" -- treat posix sh like bash for history purposes
+    end
+    return nil
+end
+
+function M.detect_shell(pane)
+    -- 1) Foreground process name
+    local ok, name = pcall(function()
+        return pane:get_foreground_process_name()
+    end)
+    if ok then
+        local kind = classify_shell_name(name)
+        if kind then
+            return kind
+        end
+    end
+
+    -- 2) Process info (executable / argv) when available
+    local ok_info, info = pcall(function()
+        return pane:get_foreground_process_info()
+    end)
+    if ok_info and type(info) == "table" then
+        local kind = classify_shell_name(info.executable or info.name)
+        if kind then
+            return kind
+        end
+        if type(info.argv) == "table" then
+            for _, arg in ipairs(info.argv) do
+                kind = classify_shell_name(arg)
+                if kind then
+                    return kind
+                end
+            end
+        end
+    end
+
+    -- 3) $SHELL from the environment WezTerm was started with
+    local kind = classify_shell_name(os.getenv("SHELL"))
+    if kind then
+        return kind
+    end
+
+    return "unknown"
+end
+
+function M.dialect_hint(shell)
+    if shell == "fish" then
+        return "Shell dialect: fish. Prefer fish syntax (and/or, test, functions). Avoid bash-only [[ ]] and export FOO=bar; use set -x."
+    elseif shell == "zsh" then
+        return "Shell dialect: zsh. Prefer zsh/bash-compatible commands."
+    elseif shell == "bash" then
+        return "Shell dialect: bash. Prefer portable bash commands."
+    elseif shell == "powershell" then
+        return "Shell dialect: PowerShell. Prefer PowerShell cmdlets."
+    end
+    return "Prefer portable POSIX shell commands when unsure of the shell."
+end
+
+function M.is_risky(command)
+    if not command or command == "" then
+        return false
+    end
+    for _, pat in ipairs(RISK_PATTERNS) do
+        if command:lower():find(pat) then
+            return true
+        end
+    end
+    return false
+end
+
+function M.read_clipboard()
+    local args
+    if util.is_windows then
+        args = { "powershell", "-NoProfile", "-Command", "Get-Clipboard" }
+    else
+        -- macOS first, then Wayland/X11
+        local ok, stdout = util.run_cmd({ "pbpaste" })
+        if ok and stdout then
+            return stdout
+        end
+        ok, stdout = util.run_cmd({ "wl-paste", "-n" })
+        if ok and stdout then
+            return stdout
+        end
+        ok, stdout = util.run_cmd({ "xclip", "-selection", "clipboard", "-o" })
+        if ok and stdout then
+            return stdout
+        end
+        return nil
+    end
+    local ok, stdout = util.run_cmd(args)
+    if ok then
+        return stdout
+    end
+    return nil
+end
+
+function M.write_clipboard(text)
+    if not text then
+        return false
+    end
+    if util.is_windows then
+        local ok = util.run_cmd({
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            "Set-Clipboard -Value @'\n" .. text .. "\n'@",
+        })
+        return ok
+    end
+    -- Prefer pbcopy on macOS
+    local tmp = os.tmpname()
+    local f = io.open(tmp, "wb")
+    if not f then
+        return false
+    end
+    f:write(text)
+    f:close()
+    local ok = util.run_cmd({ "sh", "-c", "cat '" .. tmp .. "' | pbcopy" })
+    if not ok then
+        ok = util.run_cmd({ "sh", "-c", "cat '" .. tmp .. "' | xclip -selection clipboard" })
+    end
+    if not ok then
+        ok = util.run_cmd({ "sh", "-c", "cat '" .. tmp .. "' | wl-copy" })
+    end
+    os.remove(tmp)
+    return ok
+end
+
+-- Send command to shell pane, optionally confirming risky commands.
+-- opts.skip_risk_confirm: when true, skip the risk gate (caller already confirmed).
+-- callback(sent:boolean)
+function M.send_command(window, shell_pane, ai_pane, config, command, callback, opts)
+    callback = callback or function() end
+    opts = opts or {}
+    if not command or command == "" then
+        callback(false)
+        return
+    end
+
+    local function do_send()
+        util.clear_line(shell_pane)
+        shell_pane:send_text(command)
+        callback(true)
+    end
+
+    if opts.skip_risk_confirm then
+        do_send()
+        return
+    end
+
+    if config.require_risk_confirm ~= false and M.is_risky(command) then
+        ui.ai_print(ai_pane, "Risky command:\n" .. command, "warn")
+        ui.confirm(window, shell_pane, "Send risky command to shell?", "send", function(_, _, yes)
+            if yes then
+                do_send()
+            else
+                ui.ai_print(ai_pane, "Cancelled — command not sent.", "warn")
+                callback(false)
+            end
+        end)
+    else
+        do_send()
+    end
+end
+
+return M
