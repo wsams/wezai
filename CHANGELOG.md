@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/wsams/wezai/compare/v1.3.3...v1.4.0) (2026-07-31)
+
+
+### Features
+
+* **git:** accept any N for [@git](https://github.com/git):rebaseN and [@git](https://github.com/git):softN ([#9](https://github.com/wsams/wezai/issues/9)) ([aa85fec](https://github.com/wsams/wezai/commit/aa85fece255b1990d10ab59aa65944a7bd28813f))
+
 ## [1.3.3](https://github.com/wsams/wezai/compare/v1.3.2...v1.3.3) (2026-07-31)
 
 
