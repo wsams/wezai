@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/wsams/wezai/compare/v1.5.0...v1.6.0) (2026-07-31)
+
+
+### Features
+
+* parameterize history, git log, and kube logs counts ([ef56c4b](https://github.com/wsams/wezai/commit/ef56c4beb4161c17f72282627cd0a77742fdb764))
+
 # [1.5.0](https://github.com/wsams/wezai/compare/v1.4.0...v1.5.0) (2026-07-31)
 
 
