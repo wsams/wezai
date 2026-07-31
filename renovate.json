@@ -1,0 +1,44 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":semanticCommitTypeAll(chore)",
+    ":semanticCommitScope(deps)",
+    ":enableVulnerabilityAlerts"
+  ],
+  "timezone": "America/Los_Angeles",
+  "schedule": ["before 6am"],
+  "labels": ["dependencies"],
+  "dependencyDashboard": true,
+  "platformAutomerge": true,
+  "automergeStrategy": "squash",
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true,
+    "schedule": ["before 6am on monday"]
+  },
+  "packageRules": [
+    {
+      "description": "Automerge non-major npm and Action updates",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Automerge GitHub Actions (including majors — pinned to major tags)",
+      "matchManagers": ["github-actions"],
+      "automerge": true
+    },
+    {
+      "description": "Leave npm majors for a quick look",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "schedule": ["at any time"]
+  }
+}
