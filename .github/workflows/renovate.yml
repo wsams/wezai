@@ -1,0 +1,30 @@
+name: Renovate
+
+on:
+  schedule:
+    # Nightly ~06:00 America/Los_Angeles (13:00 UTC; PST/PDT-safe enough for bot runs)
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Self-hosted Renovate
+        uses: renovatebot/github-action@v46.1.21
+        with:
+          # PAT (classic) with `repo` + `workflow` so github-actions updates work.
+          # Repo Settings → Secrets → Actions → RENOVATE_TOKEN
+          token: ${{ secrets.RENOVATE_TOKEN }}
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_PLATFORM: github
+          RENOVATE_ONBOARDING: "false"
+          LOG_LEVEL: info

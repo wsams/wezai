@@ -8,7 +8,7 @@
     ":enableVulnerabilityAlerts"
   ],
   "timezone": "America/Los_Angeles",
-  "schedule": ["before 6am"],
+  "schedule": ["at any time"],
   "labels": ["dependencies"],
   "dependencyDashboard": true,
   "platformAutomerge": true,
@@ -16,8 +16,7 @@
   "rangeStrategy": "bump",
   "lockFileMaintenance": {
     "enabled": true,
-    "automerge": true,
-    "schedule": ["before 6am on monday"]
+    "automerge": true
   },
   "packageRules": [
     {
@@ -26,7 +25,7 @@
       "automerge": true
     },
     {
-      "description": "Automerge GitHub Actions (including majors — pinned to major tags)",
+      "description": "Automerge GitHub Actions",
       "matchManagers": ["github-actions"],
       "automerge": true
     },
