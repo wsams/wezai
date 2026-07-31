@@ -49,6 +49,8 @@ local function is_reserved_ref(raw)
         or raw:match("^history:") ~= nil
         or raw:match("^git:") ~= nil
         or raw:match("^kube:") ~= nil
+        or raw:match("^tf:") ~= nil
+        or raw:match("^terraform:") ~= nil
         or raw:match("^dir:") ~= nil
 end
 
@@ -118,6 +120,13 @@ function M.parse_at_refs(line)
             return "synthetic", raw
         end
         if raw:match("^kube:") then
+            return "synthetic", raw
+        end
+        if raw:match("^tf:") or raw:match("^terraform:") then
+            -- Normalize @terraform:… → tf:… for collect_attach
+            if raw:match("^terraform:") then
+                return "synthetic", "tf:" .. (raw:match("^terraform:(.+)$") or "")
+            end
             return "synthetic", raw
         end
         if raw:match("^dir:") then
@@ -346,6 +355,25 @@ local function resolve_synthetics(synthetics, window, pane, cwd, config)
                     content = content,
                 })
                 table.insert(labels, "@" .. syn)
+            end
+        elseif syn:match("^tf:") then
+            local tfmod = require("tf")
+            if not cwd then
+                table.insert(errors, "@" .. syn .. " needs pane cwd")
+            else
+                local content, terr = tfmod.collect_attach(syn, cwd, config)
+                if terr and terr ~= "" then
+                    table.insert(errors, "@" .. syn .. " failed: " .. terr)
+                elseif content == nil then
+                    table.insert(errors, "@" .. syn .. " failed: empty attach")
+                else
+                    table.insert(blocks, {
+                        label = "Terraform " .. (syn:match("^tf:(.+)$") or syn),
+                        path = "@" .. syn,
+                        content = content,
+                    })
+                    table.insert(labels, "@" .. syn)
+                end
             end
         elseif syn:match("^dir:") then
             local rel = syn:sub(5)

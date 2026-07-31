@@ -53,7 +53,7 @@ local function keep_alive_args(pad)
         "sh",
         "-c",
         string.format(
-            "printf '\\r\\n%s%swezai%s — output pane\\r\\n%s%sFollow up: CTRL+i%s · %sCTRL+SHIFT+P%s command palette\\r\\n%sType @git / @history in the palette to filter\\r\\n\\r\\n'; "
+            "printf '\\r\\n%s%swezai%s — output pane\\r\\n%s%sFollow up: CTRL+i%s · %sCTRL+SHIFT+P%s command palette\\r\\n%sType @git / @kube / @tf / @history in the palette to filter\\r\\n\\r\\n'; "
                 .. "WEZAI_OUTPUT_PANE=1; while true; do sleep 86400; done",
             indent,
             BOLD .. CYAN,

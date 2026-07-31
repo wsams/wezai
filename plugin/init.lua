@@ -56,6 +56,7 @@ local context = require("context")
 local history = require("history")
 local git = require("git")
 local kube = require("kube")
+local tf = require("tf")
 local palette = require("palette")
 local files = require("files")
 local providers = require("providers")
@@ -274,15 +275,15 @@ local function prompt_for_ai(window, pane, config, opts)
 
     local description
     if selected_file then
-        description = "wezai — @path / @pick / @@file / @git / @kube / @history\n---\n"
+        description = "wezai — @path / @pick / @@file / @git / @kube / @tf / @history\n---\n"
             .. util.truncate(selected_file)
             .. "\n---"
     elseif selection then
-        description = "wezai — selection attached; @pick / @git / @kube / @history / @@file\n---\n"
+        description = "wezai — selection attached; @pick / @git / @kube / @tf / @history / @@file\n---\n"
             .. util.truncate(selection)
             .. "\n---"
     else
-        description = "wezai — @path / @pick / @git / @kube / @history · palette CTRL+SHIFT+P"
+        description = "wezai — @path / @pick / @git / @kube / @tf / @history · palette CTRL+SHIFT+P"
         if share_pane then
             description = description .. " · sharing pane history"
         end
@@ -321,6 +322,17 @@ local function prompt_for_ai(window, pane, config, opts)
                 return
             elseif kube_ref.mode == "run" then
                 kube.run_action(win, p, config, kube_ref.id, kube_ref.extra)
+                return
+            end
+        end
+
+        local tf_ref = tf.parse_line(line)
+        if tf_ref then
+            if tf_ref.mode == "picker" then
+                palette.show(win, p, config, { scope = "tf" })
+                return
+            elseif tf_ref.mode == "run" then
+                tf.run_action(win, p, config, tf_ref.id, tf_ref.extra)
                 return
             end
         end
@@ -539,6 +551,14 @@ kube._dispatch = function(win, p, request, config)
     dispatch_request(win, p, request, config, {})
 end
 
+tf._ask = function(win, p, config, prompt, user_text)
+    handle_ai_request(win, p, prompt, config, { user_text = user_text or "tf" })
+end
+
+tf._dispatch = function(win, p, request, config)
+    dispatch_request(win, p, request, config, {})
+end
+
 palette.handlers = {
     ask = function(win, p, cfg)
         prompt_for_ai(win, p, cfg, { share_pane = false })
@@ -750,6 +770,16 @@ local function apply_to_config(wezterm_config, user_config)
             config.keybinding_kube.mods,
             wezterm.action_callback(function(window, pane)
                 palette.show(window, pane, config, { scope = "kube" })
+            end)
+        )
+    end
+
+    if type(config.keybinding_tf) == "table" and config.keybinding_tf.key then
+        bind_key(
+            config.keybinding_tf.key,
+            config.keybinding_tf.mods,
+            wezterm.action_callback(function(window, pane)
+                palette.show(window, pane, config, { scope = "tf" })
             end)
         )
     end

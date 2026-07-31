@@ -2,6 +2,7 @@ local wezterm = require("wezterm")
 local ui = require("ui")
 local git = require("git")
 local kube = require("kube")
+local tf = require("tf")
 local history = require("history")
 
 local M = {}
@@ -19,7 +20,7 @@ local function add(choices, handlers, id, label, fn)
     handlers[id] = fn
 end
 
--- scope: nil (all) | "git" | "kube" | "history" | "history:…"
+-- scope: nil (all) | "git" | "kube" | "tf" | "history" | "history:…"
 function M.show(window, pane, config, opts)
     opts = opts or {}
     local scope = opts.scope
@@ -34,6 +35,7 @@ function M.show(window, pane, config, opts)
         local include_core = (scope == nil)
         local include_git = (scope == nil or scope == "git")
         local include_kube = (scope == nil or scope == "kube")
+        local include_tf = (scope == nil or scope == "tf")
         local hist_filter = nil
         if scope == "history" then
             hist_filter = "all"
@@ -129,6 +131,17 @@ function M.show(window, pane, config, opts)
             end
         end
 
+        if include_tf then
+            for _, a in ipairs(tf.list_actions()) do
+                local kind = a.kind == "ai" and "ai" or (a.kind == "show" and "show" or "run")
+                local label = "@tf:" .. a.id .. "  [" .. kind .. "]  " .. a.label
+                local action_id = a.id
+                add(choices, handlers, "tf:" .. action_id, label, function(win, p, cfg)
+                    tf.run_action(win, p, cfg, action_id, nil)
+                end)
+            end
+        end
+
         if hist_filter then
             local cok, entries_or_err = pcall(history.collect_entries, window, pane, config, hist_filter)
             if not cok then
@@ -162,10 +175,12 @@ function M.show(window, pane, config, opts)
             title = "wezai · @git  (type to filter)"
         elseif scope == "kube" then
             title = "wezai · @kube  (type to filter)"
+        elseif scope == "tf" then
+            title = "wezai · @tf  (type to filter)"
         elseif scope and tostring(scope):find("^history") then
             title = "wezai · @history  (type to filter)"
         else
-            title = "wezai · type @git / @kube / @history / Ask…"
+            title = "wezai · type @git / @kube / @tf / @history / Ask…"
         end
 
         -- Open selector on the current pane (do not create AI pane first — that steals focus)

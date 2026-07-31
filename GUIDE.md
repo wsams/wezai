@@ -1,6 +1,6 @@
 # wezai guide
 
-Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `@history`, and file edits.
+Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `@tf`, `@history`, and file edits.
 
 ---
 
@@ -9,7 +9,7 @@ Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `
 | Pane | Role |
 |------|------|
 | **Left (shell)** | Your real terminal. cwd, git repo, commands you run. Stay focused here. |
-| **Right (wezai)** | Output only — answers, diffs, `git status`, progress. Not a shell. |
+| **Right (wezai)** | Output only — answers, diffs, `git status`, terraform validate, progress. Not a shell. |
 
 | Entry point | When to use it |
 |-------------|----------------|
@@ -17,6 +17,7 @@ Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `
 | `CTRL+SHIFT+P` | Palette — jump to any action without typing a full Ask line |
 | `CTRL+SHIFT+G` | Same palette, pre-filtered to `@git` |
 | `CTRL+SHIFT+K` | Same palette, pre-filtered to `@kube` |
+| `CTRL+SHIFT+T` | Same palette, pre-filtered to `@tf` |
 | `CTRL+SHIFT+H` | Same palette, pre-filtered to `@history` |
 
 You do **not** need `CTRL+I` before the palette. From the shell: `CTRL+SHIFT+P` → type → Enter.
@@ -82,11 +83,13 @@ Undo: palette → **Undo last edit**.
 | `@selection` | `@selection fix this error` |
 | `@git:status` | `@git:status what should I commit?` |
 | `@git:diff` | `@git:diff write a PR summary` |
+| `@tf:state` | `@tf:state what’s orphaned?` |
+| `@tf:validate` | `@tf:validate why is this failing?` |
 | `@dir:.` | `@dir:src what modules exist?` |
 | `@history` | `@history what docker commands did I run?` |
 | `@history:40` | `@history:40 summarize recent work` |
 
-Bare `@git:status` / `@history` (nothing else) run **actions** / open the palette — they do not call the model. Add a question after the token to attach + ask.
+Bare `@git:status` / `@tf:validate` / `@history` (nothing else) run **actions** / open the palette — they do not call the model. Add a question after the token to attach + ask.
 
 ---
 
@@ -98,6 +101,8 @@ Type to fuzzy-filter. Labels start with namespaces so filtering is easy:
 |----------|---------|
 | `@git` | All git actions |
 | `@git:soft` / `@git:rebase` | Soft reset / interactive rebase (any N) |
+| `@kube` | All kubectl actions |
+| `@tf` | All terraform actions |
 | `@history` | Recent shell / AI commands |
 | `Ask` / `Fix` / `model` | Core helpers |
 
@@ -258,6 +263,57 @@ Ask-with-context attach tokens: `@kube:pods`, `@kube:events`, `@kube:all`, `@kub
 
 ---
 
+## `@tf` actions
+
+Open via `CTRL+SHIFT+P` → `@tf`, or `CTRL+SHIFT+T`, or Ask → `@tf` / `@tf:validate`.
+
+Commands use the **shell pane cwd** (`terraform -chdir=…` for show/AI). wezai resolves the `terraform` binary the same way as kubectl (Homebrew/asdf/mise + login shell), or set `tf.terraform = "/usr/local/bin/terraform"`.
+
+**Mutating** actions (`apply`, `destroy`, `import`, `state-rm`) confirm when `tf.confirm_mutate` is true (default). `unlock` (`force-unlock`) always confirms. AI helpers gather read-only context and steer toward validate / fmt / plan / `@@` edits — not apply/destroy.
+
+### Show (no model)
+
+| Action | Meaning |
+|--------|---------|
+| `@tf:version` | `terraform version` |
+| `@tf:validate` | `terraform validate -no-color` |
+| `@tf:providers` | `terraform providers` |
+| `@tf:workspace` / `ws` | Current workspace + list |
+| `@tf:state` | `terraform state list` |
+| `@tf:output` | `terraform output` |
+| `@tf:fmt-check` | `terraform fmt -check -diff -recursive` |
+
+### Shell helpers (no model)
+
+| Action | Notes |
+|--------|--------|
+| `@tf:init` / `fmt` / `plan` | Everyday workflow |
+| `@tf:apply` / `destroy` | Confirm before run |
+| `@tf:refresh` | `apply -refresh-only` |
+| `@tf:import` | Prompts for address + id |
+| `@tf:workspace-select` / `workspace-new` | Optional name after the action |
+| `@tf:state-rm` | Remove from state only (confirm) |
+| `@tf:unlock` | `force-unlock <LOCK_ID>` (always confirm) |
+
+### AI — generate & debug
+
+| Action | What it does |
+|--------|----------------|
+| `@tf:generate …` | Generate HCL from a description (+ existing `*.tf` context) |
+| `@tf:debug` | Diagnose selection/scrollback + validate/state/sources |
+| `@tf:explain` | Explain selection or cwd sources |
+| `@tf:review` | Bugs / insecure defaults / missing providers |
+
+```
+CTRL+SHIFT+T → @tf:validate
+CTRL+I → @tf:generate S3 bucket with versioning and block public access
+CTRL+I → @tf:debug   (after a failed plan — select the error first)
+```
+
+Ask-with-context attach tokens: `@tf:state`, `@tf:validate`, `@tf:output`, `@tf:workspace`, `@tf:providers`, `@tf:sources`.
+
+---
+
 ## `@history`
 
 Recent shell history (fish / zsh / bash), scrollback, and wezai session events appear as `@history …` rows in the palette.
@@ -336,15 +392,33 @@ Review the diff → Apply.
 CTRL+SHIFT+H → type kubectl → pick row → Insert (edit) or Run
 ```
 
+### “Validate and debug this Terraform module”
+
+```
+CTRL+SHIFT+T → @tf:validate
+CTRL+SHIFT+T → @tf:plan
+# select the error output, then:
+CTRL+SHIFT+T → @tf:debug
+```
+
+Or generate new HCL:
+
+```
+CTRL+I → @tf:generate aws_s3_bucket with versioning enabled
+```
+
+Then write it with `@@main.tf …` after reviewing the suggestion.
+
 ---
 
 ## Safety
 
 - Secrets (API keys, tokens, private keys) are redacted before send / memory  
-- Risky shell commands confirm before send  
+- Risky shell commands confirm before send (includes `terraform apply` / `destroy` / `force-unlock`)  
 - `@@` edits always show a diff unless you disable `require_edit_confirm`  
 - No force-push action in v1  
 - `@git:latest` uses `--ff-only` only  
+- Terraform AI helpers prefer validate/fmt/plan — not apply/destroy  
 
 ---
 
