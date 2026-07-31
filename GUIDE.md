@@ -85,6 +85,8 @@ Undo: palette → **Undo last edit**.
 | `@dir:.` | `@dir:src what modules exist?` |
 | `@history` | `@history what docker commands did I run?` |
 | `@history:40` | `@history:40 summarize recent work` |
+| `@history:shell:30` | `@history:shell:30 which docker cmds?` |
+| `@git:log30` | `@git:log30 what changed recently?` |
 
 Bare `@git:status` / `@history` (nothing else) run **actions** / open the palette — they do not call the model. Add a question after the token to attach + ask.
 
@@ -130,7 +132,7 @@ Mutating actions confirm, then run in your **shell** pane. Inspect actions print
 |--------|-------------------|
 | `@git:status` | `git status -sb` |
 | `@git:diff` | Staged + worktree diff |
-| `@git:log` | Last 15 commits |
+| `@git:log` / `@git:logN` | Last 15 commits (or N, e.g. `@git:log30`) |
 | `@git:branch` | `git branch -vv` |
 | `@git:stash` | `git stash list` |
 | `@git:remote` | `git remote -v` |
@@ -240,7 +242,7 @@ kubectl config use-context <context-name>
 
 | Action | Notes |
 |--------|--------|
-| `@kube:describe` / `logs` / `logs-f` / `logs-deploy` | Prompt for names |
+| `@kube:describe` / `logs` / `logs-f` / `logs-deploy` | Prompt for names; logs accept `--tail` N (`@kube:logs500`) |
 | `@kube:exec` / `pf` / `pf-svc` | Interactive / port-forward |
 | `@kube:rollout` / `restart` / `scale` / `wait` | Rollout + wait; mutate confirms |
 | `@kube:diff` / `apply` / `delete-f` | Manifest workflows (confirm mutates) |
@@ -271,7 +273,10 @@ Recent shell history (fish / zsh / bash), scrollback, and wezai session events a
 | `@history` alone | Palette scoped to history |
 | `@history:failed` | Rows near error-looking output |
 | `@history:shell` / `@history:ai` | Filter by source |
+| `@history:40` | Attach last 40 entries (any positive N) |
+| `@history:shell:40` / `@history:failed:20` | Filter + limit |
 | `@history how did I deploy?` | Attach history chunk + ask |
+| `@history:shell:30 what docker cmds?` | Attach 30 shell rows + ask |
 
 History files are read from the **tail** only (default last 4 MiB). Fuzzy filter applies to the rows loaded into the palette (`palette_n`), not your entire lifetime history.
 
