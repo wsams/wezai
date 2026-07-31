@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/wsams/wezai/compare/v1.2.0...v1.2.1) (2026-07-31)
+
+
+### Bug Fixes
+
+* Tighten shell integration ([0b46c8f](https://github.com/wsams/wezai/commit/0b46c8fa5fe54b5a2f884e619169fad5581dc937))
+
 # [1.2.0](https://github.com/wsams/wezai/compare/v1.1.0...v1.2.0) (2026-07-31)
 
 
