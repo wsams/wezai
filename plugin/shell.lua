@@ -94,8 +94,17 @@ end
 --- Injected into system_prompt on every ask so commands match the active shell.
 function M.dialect_hint(kind)
     if kind == "fish" then
-        return "ALWAYS provide commands in Fish shell format "
-            .. "(fish syntax: and/or, set -x, functions; avoid bash-only [[ ]], export FOO=bar)."
+        return table.concat({
+            "ALWAYS provide commands in Fish shell syntax (not bash/zsh).",
+            "Rules:",
+            "- Use `and` / `or` for conditionals; do NOT use bash `&&` / `||` / `[[ ]]` / `export FOO=bar` (use `set -x FOO bar`).",
+            "- `end` is ONLY valid to close `if` / `else if` / `switch` / `while` / `for` / `begin` / `function`. Never trail a one-liner with `; end`.",
+            "- Confirm prompts: either",
+            '  `read -l -P "Prompt? (y/N) " confirm; and test "$confirm" = "y"; and some_command`',
+            "  (no `end`) OR a real block:",
+            '  `read -l -P "Prompt? (y/N) " confirm; if test "$confirm" = "y"; some_command; end`',
+            "- Prefer a single pasteable command line when possible.",
+        }, " ")
     elseif kind == "zsh" then
         return "ALWAYS provide commands in zsh format (zsh/bash-compatible is fine)."
     elseif kind == "bash" then
