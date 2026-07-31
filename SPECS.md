@@ -15,11 +15,11 @@ User-facing walkthroughs live in [GUIDE.md](GUIDE.md). Install / config sketch: 
 
 **wezai** is a WezTerm plugin that puts an AI assistant and utility catalogs next to the user’s shell:
 
-- **Ask** — natural-language CLI help with attachable context (`@file`, selection, git, kube, history).
+- **Ask** — natural-language CLI help with attachable context (`@file`, selection, git, kube, tf, history).
 - **Edit** — one-shot file create/rewrite via `@@path` with unified diff + confirm.
-- **Palette** — fuzzy `InputSelector` (`CTRL+SHIFT+P`) for Ask helpers, `@git`, `@kube`, `@history`.
-- **AI output pane** — right-side keep-alive pane for answers, diffs, git/kube show output (not for running shell/git).
-- **Safety** — secret redaction, risky-command confirms, mutate confirms for git/kube/edit.
+- **Palette** — fuzzy `InputSelector` (`CTRL+SHIFT+P`) for Ask helpers, `@git`, `@kube`, `@tf`, `@history`.
+- **AI output pane** — right-side keep-alive pane for answers, diffs, git/kube/tf show output (not for running shell/git).
+- **Safety** — secret redaction, risky-command confirms, mutate confirms for git/kube/tf/edit.
 
 Brand string in UI/logs: **`wezai`**. Never introduce third-party product branding in UI strings.
 
@@ -51,7 +51,7 @@ Public entrypoint: `plugin/init.lua` → `apply_to_config(wezterm_config, user_c
 ```
 plugin/
   init.lua          -- bootstrap, keybindings, ask/edit orchestration, palette hooks
-  settings.lua      -- defaults + merge (nested tables: ai_pane, history, git, kube, stats, files)
+  settings.lua      -- defaults + merge (nested tables: ai_pane, history, git, kube, tf, stats, files)
   util.lua          -- paths, files, JSON parse, run_cmd (pcall), resolve_executable, large-file read
   ui.lua            -- AI pane lifecycle, styling, InputSelector, usage banner
   session.lua       -- per-tab chat memory + history events + last edit
@@ -62,6 +62,7 @@ plugin/
   history.lua       -- fish/zsh/bash history + scrollback + session events
   git.lua           -- @git action catalog
   kube.lua          -- @kube action catalog
+  tf.lua            -- @tf terraform action catalog
   palette.lua       -- unified CTRL+SHIFT+P palette
   stats.lua         -- persistent token/model usage DB
   providers/
@@ -85,7 +86,7 @@ Node/`package.json` is **only** for semantic-release (not a runtime dependency o
 
 ### 4.1 Shell pane vs AI pane
 
-- All git/kube/history/cwd work must use the **shell** pane, never the AI output pane.
+- All git/kube/tf/history/cwd work must use the **shell** pane, never the AI output pane.
 - `ui.shell_pane_for(window, pane)` resolves the real shell when focus is on the AI pane.
 - AI pane is output-only (keep-alive `sh`/`sleep` loop marked `WEZAI_OUTPUT_PANE`).
 
@@ -135,9 +136,10 @@ Command labels print as `(fish/macos)` style when showing suggested commands.
 ### 4.6 Safety
 
 - `context.redact` strips common secrets (keys, tokens, JWTs, private keys) before prompts/history.
-- `shell.is_risky` + confirm before sending dangerous commands (includes kubectl mutate/exec patterns and git force/push/reset/etc.).
-- Edit apply and kube mutate actions confirm unless config disables confirms.
+- `shell.is_risky` + confirm before sending dangerous commands (includes kubectl mutate/exec patterns, terraform apply/destroy/import/state-rm/force-unlock, and git force/push/reset/etc.).
+- Edit apply and kube/tf mutate actions confirm unless config disables confirms.
 - Kube AI helpers must prefer **read-only** next steps (get/describe/logs); never bake org-specific cluster/namespace names into the catalog.
+- Terraform AI helpers must prefer **read-only** next steps (validate/fmt/plan/state list) and `@@` file edits; never bake account/org-specific names into the catalog.
 
 ### 4.7 Child processes & Lua returns
 
@@ -163,6 +165,7 @@ Supports:
 | `@clipboard` / `@selection` | Clipboard / selection |
 | `@git` / `@git:id` | Git picker or action (see §5.4) |
 | `@kube` / `@kube:id` / `@kube:pods/<ns>` | Kube picker, action, or attach with optional ns (see §5.5) |
+| `@tf` / `@tf:id` / `@terraform:id` | Terraform picker, action, or attach (see §5.6) |
 | `@history` / bare history ref | History palette / attach |
 | `@dir:path` | Shallow directory listing |
 
@@ -178,9 +181,10 @@ Supports:
 
 Unified fuzzy `InputSelector` with scopes:
 
-- full (Ask helpers + git + kube + history rows)
+- full (Ask helpers + git + kube + tf + history rows)
 - `git` (`CTRL+SHIFT+G`)
 - `kube` (`CTRL+SHIFT+K`)
+- `tf` (`CTRL+SHIFT+T`)
 - `history` (`CTRL+SHIFT+H`) and filtered history scopes
 
 Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, Attach/Edit file (fuzzy), Undo edit, Copy last command, Shorter re-ask, Pick model, Clear chat memory.
@@ -244,13 +248,45 @@ Supported synthetics (optional ns via `/` or `:`):
 
 `collect_attach` splits `pods/<ns>` with a plain `/` or `:` cut (not a fragile pattern). **Return contract:** `(content, err)` where success is `err == nil` — never return `""` as `err`. In Lua only `nil`/`false` are falsy; empty stderr used to look like failure (`failed:` with no message). `context.lua` also treats `err == ""` as success for defense in depth.
 
-### 5.6 Stats / usage
+### 5.6 `@tf` catalog (`tf.lua`)
+
+Kinds: `show` (print in AI pane), `shell` (run/insert in shell), `ai` (LLM for generate/debug).
+
+Uses the shell pane cwd via `-chdir=`. Binary resolution mirrors kube: `config.tf.terraform` or `util.resolve_executable` (Homebrew/asdf/mise + login shell). Shell-kind actions insert bare `terraform …` into the user’s shell.
+
+#### Invocation forms
+
+| Form | Meaning |
+|------|---------|
+| `@tf` / `@tf:` / `@terraform` | Open terraform palette |
+| `@tf:validate` | Show `terraform validate` in AI pane |
+| `@tf:plan` | Insert/run `terraform plan` in shell |
+| `@tf:generate add an S3 bucket` | AI generate (extra = instruction) |
+| `@tf:state what’s orphaned?` | Attach state list + ask (show → attach mode) |
+
+Bare `@tf:id` = run action; show actions with trailing text fall through to attach + ask (same idea as `@git:status …`). `@terraform:id` is accepted as an alias for `@tf:id`.
+
+#### Catalog kinds
+
+- Show (no model): `version`, `validate`, `providers`, `workspace`/`ws`, `state`, `output`, `fmt-check`.
+- Shell (no model): `init`, `fmt`, `plan`, `apply`, `destroy`, `refresh`, `import`, `workspace-select`, `workspace-new`, `state-rm`, `unlock`.
+- AI: `generate`/`gen` — HCL from description (+ existing `*.tf` context); `debug`/`diagnose`/`fix` — selection/scrollback + validate/state/sources; `explain`; `review`.
+
+Mutate confirms when `tf.confirm_mutate` (default true) for apply/destroy/import/state-rm; unlock always confirms. AI helpers steer toward validate/fmt/plan/`@@` edits — never bake apply/destroy into suggested commands unless the user clearly asked to mutate.
+
+#### Ask attach tokens
+
+Supported synthetics:
+
+- `@tf:version`, `@tf:validate`, `@tf:providers`, `@tf:workspace`, `@tf:state`, `@tf:output`, `@tf:fmt-check`, `@tf:sources`
+
+### 5.7 Stats / usage
 
 - DB: `~/.local/share/wezai/stats.json` (override `stats.path`; disable with `stats.enabled = false`).
 - Tracks totals, per-model, last call (prompt/completion tokens, model).
 - Banner on **new** AI pane create; per-turn line after each successful ask/edit.
 
-### 5.7 Session
+### 5.8 Session
 
 Per-tab: chat turns (capped by `chat_max_turns`), last question/command, last edit (for undo), history events.
 
@@ -266,6 +302,7 @@ Per-tab: chat turns (capped by `chat_max_turns`), last question/command, last ed
 | History scope | `CTRL\|SHIFT+h` | History palette |
 | Git scope | `CTRL\|SHIFT+g` | Git palette |
 | Kube scope | `CTRL\|SHIFT+k` | Kube palette |
+| Terraform scope | `CTRL\|SHIFT+t` | Terraform palette |
 
 Single-letter keys are also bound with opposite case for WezTerm quirks.
 
@@ -273,7 +310,7 @@ Single-letter keys are also bound with opposite case for WezTerm quirks.
 
 ## 7. Configuration surface
 
-Merged in `settings.finalize`. Nested keys deep-merged: `ai_pane`, `history`, `git`, `kube`, `stats`, `files`.
+Merged in `settings.finalize`. Nested keys deep-merged: `ai_pane`, `history`, `git`, `kube`, `tf`, `stats`, `files`.
 
 Important fields (see `settings.lua` for full defaults):
 
@@ -287,6 +324,7 @@ Important fields (see `settings.lua` for full defaults):
 | `backup_suffix` | Default `.wezai.bak` |
 | `require_edit_confirm`, `require_risk_confirm` | Safety toggles |
 | `kube.namespace`, `kube.kubectl`, `kube.confirm_mutate`, `kube.max_attach_bytes` | kubectl defaults / binary / attach cap |
+| `tf.terraform`, `tf.confirm_mutate`, `tf.max_attach_bytes` | terraform binary / mutate confirms / attach cap |
 | `git.default_branch`, `git.confirm_push`, `git.max_attach_bytes` | git catalog |
 | `history.*` | Shell/session history limits |
 | `stats.*` | Usage DB |
@@ -335,7 +373,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 1. **Preserve behaviors in §4** unless the change explicitly revises this spec.
 2. Match existing Lua style (local modules, small helpers, `wezterm.log_*`).
 3. Do not add unnecessary markdown files; update README/GUIDE/SPECS when user-facing behavior changes.
-4. Prefer established tools (`fd`/`git`/`find`, system `diff -u`, `kubectl`) over reinvention.
+4. Prefer established tools (`fd`/`git`/`find`, system `diff -u`, `kubectl`, `terraform`) over reinvention.
 5. Local WezTerm testing: prefer `plugin.require("/absolute/path/to/checkout")` and **do not** call `update_all()` on every reload. If using the GitHub require, sync the working tree into the matching cache dir then reload.
 6. Multi-return APIs that use an error slot must return **`nil` on success**, never `""` (Lua truthiness).
 7. Never commit secrets (API keys in `wezterm.lua` stay user-local).
@@ -356,8 +394,10 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] `@kube:pods kube-system` / `@kube:pods/kube-system` override ns; `@kube:pods -A` lists all ns.
 - [ ] Ask `@kube:pods/kube-system what’s running?` attaches pods (no empty `failed:`).
 - [ ] `@kube:use-ns myns` / `@kube:diagnose`; mutates confirm.
+- [ ] `@tf:validate` prints in AI pane; `@tf:plan` runs in shell; `@tf:apply` confirms.
+- [ ] `@tf:generate …` / `@tf:debug` use the model; attach `@tf:state what’s orphaned?` works.
 - [ ] Stats banner/line appears; `~/.local/share/wezai/stats.json` updates.
-- [ ] Git/kube/history always use shell cwd (not AI pane).
+- [ ] Git/kube/tf/history always use shell cwd (not AI pane).
 
 ---
 
@@ -380,8 +420,9 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 | `run_cmd` / `resolve_executable` | `plugin/util.lua` |
 | Pane / UI | `plugin/ui.lua` |
 | Providers | `plugin/providers/` |
-| Git / Kube catalogs | `plugin/git.lua`, `plugin/kube.lua` |
+| Git / Kube / Terraform catalogs | `plugin/git.lua`, `plugin/kube.lua`, `plugin/tf.lua` |
 | Kube ns / kubectl bin / attach | `plugin/kube.lua` (`resolve_namespace`, `kubectl_bin`, `collect_attach`) |
+| Terraform bin / attach / AI | `plugin/tf.lua` (`terraform_bin`, `collect_attach`, `generate`/`debug`) |
 | Fuzzy files | `plugin/files.lua` |
 | Usage DB | `plugin/stats.lua` |
 | User docs | `README.md`, `GUIDE.md` |
