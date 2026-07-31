@@ -197,7 +197,18 @@ Commands use whatever cluster **`kubectl` already points at** (current context).
 
 Show/AI actions run `kubectl` from WezTerm’s process (not your shell pane). If WezTerm was opened from Dock/Spotlight, its PATH may miss Homebrew/Docker — wezai resolves common install locations, or set `kube.kubectl = "/usr/local/bin/kubectl"` explicitly.
 
-Namespace defaults to the context’s namespace (override with `kube.namespace` in config). Placeholders like `<pod>` / `<file>` are prompted. **Mutating** actions (`apply`, `delete-f`, `restart`, `scale`) always confirm. AI helpers only gather read-only output (`get` / events) and steer toward safe next steps.
+**Namespace (pick one):**
+
+| How | Example |
+|-----|---------|
+| Per action (one-shot) | Ask → `@kube:pods kube-system` or `@kube:pods/kube-system` |
+| All namespaces | `@kube:pods -A` or `@kube:pods-all` |
+| Persist in kubectl | `@kube:use-ns kube-system` (sets current-context namespace) |
+| Persist in wezai config | `kube = { namespace = "kube-system" }` in `apply_to_config` |
+
+Default is the kubectl current-context namespace (`default` on docker-desktop unless you change it). Placeholders like `<pod>` / `<file>` are prompted. **Mutating** actions (`apply`, `delete-f`, `restart`, `scale`) always confirm. AI helpers only gather read-only output (`get` / events) and steer toward safe next steps.
+
+Attach in a question: `@kube:pods/kube-system what’s crashlooping?`
 
 **Switching clusters (you do this, not wezai):**
 

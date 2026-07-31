@@ -108,6 +108,22 @@ function M.current_context(config)
     return "?"
 end
 
+--- Namespace for this run: action extra → config.kube.namespace → kubectl context ns.
+--- extra may be "kube-system", "-A", or "kube-system -l app=foo" (first token wins for ns).
+function M.resolve_namespace(config, extra)
+    local rest = trim(extra or "")
+    if rest == "-A" or rest == "--all-namespaces" then
+        return nil, true, "" -- all namespaces
+    end
+    if rest ~= "" then
+        local ns, more = rest:match("^(%S+)%s*(.-)%s*$")
+        if ns and ns ~= "" then
+            return ns, false, more or ""
+        end
+    end
+    return M.current_namespace(config), false, ""
+end
+
 local function fill_ns(template, ns)
     return (template or ""):gsub("<namespace>", ns or "default")
 end
@@ -303,13 +319,28 @@ local function finalize_command(ctx, template, opts)
 end
 
 local function show_cmd(ctx, title, args, use_ns)
-    local ns = use_ns and M.current_namespace(ctx.config) or nil
-    local ok, stdout, stderr = kubectl(args, { namespace = ns, config = ctx.config })
+    local ns, all_ns = nil, false
+    if use_ns then
+        ns, all_ns = M.resolve_namespace(ctx.config, ctx.extra)
+    end
+    local cmd_args = {}
+    for _, a in ipairs(args) do
+        table.insert(cmd_args, a)
+    end
+    if all_ns then
+        table.insert(cmd_args, "-A")
+        ns = nil
+    end
+    local ok, stdout, stderr = kubectl(cmd_args, { namespace = ns, config = ctx.config })
     local body = ok and stdout or (stderr ~= "" and stderr or stdout)
+    if ok and trim(body) == "" then
+        body = all_ns and "(no resources)" or ("(no resources in namespace " .. tostring(ns) .. ")")
+    end
     local ctxname = M.current_context(ctx.config)
+    local where = all_ns and ", ns=*" or (ns and (", ns=" .. ns) or "")
     print_show(
         ctx.ai_pane,
-        title .. "  (context=" .. ctxname .. (ns and (", ns=" .. ns) or "") .. ")",
+        title .. "  (context=" .. ctxname .. where .. ")",
         cap(body, kube_opts(ctx.config).max_attach_bytes)
     )
 end
@@ -379,7 +410,7 @@ add({
 add({
     id = "pods",
     kind = "show",
-    label = "get pods (current ns)",
+    label = "get pods (ns; optional: @kube:pods <ns>|-A)",
     run = function(ctx)
         show_cmd(ctx, "@kube:pods", { "get", "pods", "-o", "wide" }, true)
     end,
@@ -398,7 +429,7 @@ add({
 add({
     id = "all",
     kind = "show",
-    label = "get all (current ns)",
+    label = "get all (optional ns / -A)",
     run = function(ctx)
         show_cmd(ctx, "@kube:all", { "get", "all" }, true)
     end,
@@ -407,7 +438,7 @@ add({
 add({
     id = "deploy",
     kind = "show",
-    label = "get deploy",
+    label = "get deploy (optional ns)",
     aliases = { "deployments" },
     run = function(ctx)
         show_cmd(ctx, "@kube:deploy", { "get", "deploy", "-o", "wide" }, true)
@@ -473,7 +504,7 @@ add({
 add({
     id = "events",
     kind = "show",
-    label = "get events --sort-by lastTimestamp",
+    label = "get events (optional ns / -A)",
     run = function(ctx)
         show_cmd(ctx, "@kube:events", { "get", "events", "--sort-by=.lastTimestamp" }, true)
     end,
@@ -491,7 +522,7 @@ add({
 add({
     id = "top-pods",
     kind = "show",
-    label = "top pods (current ns)",
+    label = "top pods (optional ns / -A)",
     run = function(ctx)
         show_cmd(ctx, "@kube:top-pods", { "top", "pods" }, true)
     end,
@@ -692,14 +723,22 @@ add({
     kind = "shell",
     label = "config set-context --current --namespace=…",
     run = function(ctx)
-        prompt_line(ctx.window, ctx.pane, "Namespace to switch to", function(_, _, ns)
-            if ns == "" then
+        local function apply(ns)
+            if not ns or ns == "" then
                 return
             end
             finalize_command(ctx, "kubectl config set-context --current --namespace=" .. ns, {
                 execute = true,
                 mutate = false,
             })
+        end
+        local from_extra = trim(ctx.extra or "")
+        if from_extra ~= "" then
+            apply(from_extra:match("^(%S+)") or from_extra)
+            return
+        end
+        prompt_line(ctx.window, ctx.pane, "Namespace to switch to", function(_, _, ns)
+            apply(ns)
         end)
     end,
 })
@@ -710,14 +749,14 @@ add({
     kind = "ai",
     label = "AI: diagnose failing pods / events (read-only)",
     run = function(ctx)
-        local ns = M.current_namespace(ctx.config)
+        local ns = M.resolve_namespace(ctx.config, ctx.extra)
         local ok_p, pods = kubectl({ "get", "pods", "-o", "wide" }, { namespace = ns, config = ctx.config })
         local ok_e, events =
             kubectl({ "get", "events", "--sort-by=.lastTimestamp" }, { namespace = ns, config = ctx.config })
         local selection = util.get_selection(ctx.window, ctx.pane)
         local maxb = kube_opts(ctx.config).max_attach_bytes
         local blob = "Namespace: "
-            .. ns
+            .. tostring(ns)
             .. "\nContext: "
             .. M.current_context(ctx.config)
             .. "\n\n=== pods ===\n"
@@ -767,7 +806,7 @@ add({
     kind = "ai",
     label = "AI: why aren't pods Ready?",
     run = function(ctx)
-        local ns = M.current_namespace(ctx.config)
+        local ns = M.resolve_namespace(ctx.config, ctx.extra)
         local ok, pods = kubectl({
             "get",
             "pods",
@@ -777,7 +816,7 @@ add({
         }, { namespace = ns, config = ctx.config })
         local ok2, desc = kubectl({ "get", "pods" }, { namespace = ns, config = ctx.config })
         local prompt = "Pods in namespace "
-            .. ns
+            .. tostring(ns)
             .. " may be unhealthy. Identify which are not Ready and why. "
             .. "Propose safe next describe/logs commands (placeholders OK).\n\n```\n"
             .. cap((ok and pods or "") .. "\n" .. (ok2 and desc or ""), 80000)
@@ -806,7 +845,8 @@ function M.parse_line(line)
     if token == "@kube" or token == "@kube:" then
         return { mode = "picker" }
     end
-    local id, rest = token:match("^@kube:([%w%-]+)%s*(.-)%s*$")
+    -- @kube:pods | @kube:pods kube-system | @kube:pods/kube-system | @kube:pods:kube-system
+    local id, inline, rest = token:match("^@kube:([%w%-]+)([/:][^%s]+)?%s*(.-)%s*$")
     if not id then
         return nil
     end
@@ -814,35 +854,55 @@ function M.parse_line(line)
     if not action then
         return nil
     end
-    rest = trim(rest)
-    if rest == "" then
+    local extra = trim(rest or "")
+    if inline and inline ~= "" then
+        local from_inline = inline:sub(2) -- drop / or :
+        if extra == "" then
+            extra = from_inline
+        else
+            extra = from_inline .. " " .. extra
+        end
+    end
+    if extra == "" then
         return { mode = "run", id = action.id }
     end
-    if action.kind == "ai" then
-        return { mode = "run", id = action.id, extra = rest }
-    end
-    return { mode = "run", id = action.id, extra = rest }
+    return { mode = "run", id = action.id, extra = extra }
 end
 
 function M.collect_attach(syn, config)
-    local id = syn:match("^kube:(.+)$") or syn
-    local ns = M.current_namespace(config)
+    local raw = syn:match("^kube:(.+)$") or syn
+    local id, inline = raw:match("^([%w%-]+)([/:][^%s]+)?$")
+    if not id then
+        id = raw
+    end
+    local ns_extra = inline and inline:sub(2) or nil
+    local ns, all_ns = M.resolve_namespace(config, ns_extra)
     local maxb = kube_opts(config).max_attach_bytes
-    local kopts = { namespace = ns, config = config }
+    local kopts = { namespace = all_ns and nil or ns, config = config }
+    local function get(args)
+        local cmd = {}
+        for _, a in ipairs(args) do
+            table.insert(cmd, a)
+        end
+        if all_ns then
+            table.insert(cmd, "-A")
+        end
+        return kubectl(cmd, kopts)
+    end
     if id == "pods" then
-        local ok, stdout, stderr = kubectl({ "get", "pods", "-o", "wide" }, kopts)
+        local ok, stdout, stderr = get({ "get", "pods", "-o", "wide" })
         return ok and cap(stdout, maxb) or nil, ok and nil or (stderr or stdout)
     elseif id == "events" then
-        local ok, stdout, stderr = kubectl({ "get", "events", "--sort-by=.lastTimestamp" }, kopts)
+        local ok, stdout, stderr = get({ "get", "events", "--sort-by=.lastTimestamp" })
         return ok and cap(stdout, maxb) or nil, ok and nil or (stderr or stdout)
     elseif id == "all" then
-        local ok, stdout, stderr = kubectl({ "get", "all" }, kopts)
+        local ok, stdout, stderr = get({ "get", "all" })
         return ok and cap(stdout, maxb) or nil, ok and nil or (stderr or stdout)
     elseif id == "nodes" then
         local ok, stdout, stderr = kubectl({ "get", "nodes", "-o", "wide" }, { config = config })
         return ok and cap(stdout, maxb) or nil, ok and nil or (stderr or stdout)
     elseif id == "ctx" or id == "context" then
-        return "context=" .. M.current_context(config) .. " namespace=" .. ns, nil
+        return "context=" .. M.current_context(config) .. " namespace=" .. tostring(ns), nil
     end
     return nil, "unknown @kube attach: " .. tostring(syn)
 end

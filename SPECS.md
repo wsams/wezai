@@ -197,7 +197,7 @@ Placeholders only (`<namespace>`, `<pod>`, `<name>`, `<file>`, …) — **no** o
 
 - **Cluster selection is outside wezai.** Catalog commands never pass `--kubeconfig`; they use the user’s current `kubectl` context / `KUBECONFIG`. Document one example in GUIDE only; do not clutter action templates with kubeconfig flags.
 - **Binary resolution:** Show/AI use `wezterm.run_child_process` (GUI PATH). Resolve via `config.kube.kubectl` or `util.resolve_executable` (common brew/Docker paths + login shell). Shell-kind actions still insert bare `kubectl` into the user’s shell.
-- Namespace: `config.kube.namespace` or kubectl current-context namespace.
+- Namespace: action extra (`@kube:pods kube-system` / `@kube:pods/ns` / `-A`) → `config.kube.namespace` → kubectl current-context namespace.
 - Show: `ctx`, `ns`, `nodes`, `pods`, `pods-all`, `all`, `deploy`, `sts`, `svc`, `ing`, `cm`, `secrets` (names only), `pvc`, `events`, `top-nodes`, `top-pods`, `api-resources`, `can-i`.
 - Shell: `describe`, `logs`, `logs-f`, `logs-deploy`, `exec`, `pf`, `pf-svc`, `rollout`, `restart`, `scale`, `wait`, `diff`, `apply`, `delete-f`, `get-yaml`, `use-ns`.
 - AI (careful): `diagnose`, `explain-sel`, `not-ready` — gather read-only kubectl output; steer toward get/describe/logs.
