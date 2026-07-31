@@ -1,6 +1,6 @@
 # wezai guide
 
-Practical examples for every major surface: Ask, the palette, `@git`, `@history`, and file edits.
+Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `@history`, and file edits.
 
 ---
 
@@ -16,6 +16,7 @@ Practical examples for every major surface: Ask, the palette, `@git`, `@history`
 | `CTRL+I` | Free-form Ask (`@file`, questions, `@@` edits) |
 | `CTRL+SHIFT+P` | Palette — jump to any action without typing a full Ask line |
 | `CTRL+SHIFT+G` | Same palette, pre-filtered to `@git` |
+| `CTRL+SHIFT+K` | Same palette, pre-filtered to `@kube` |
 | `CTRL+SHIFT+H` | Same palette, pre-filtered to `@history` |
 
 You do **not** need `CTRL+I` before the palette. From the shell: `CTRL+SHIFT+P` → type → Enter.
@@ -185,6 +186,62 @@ Extra instruction after the action:
 | `@git:status` | Show status (no LLM) |
 | `@git:status what should I stage?` | Attach status + ask the model |
 | `@git` alone | Open palette scoped to git |
+
+---
+
+## `@kube` actions
+
+Open via `CTRL+SHIFT+P` → `@kube`, or `CTRL+SHIFT+K`, or Ask → `@kube` / `@kube:pods`.
+
+Commands use whatever cluster **`kubectl` already points at** (current context). wezai never adds `--kubeconfig` to catalog commands — switch clusters yourself before running `@kube` actions.
+
+Namespace defaults to the context’s namespace (override with `kube.namespace` in config). Placeholders like `<pod>` / `<file>` are prompted. **Mutating** actions (`apply`, `delete-f`, `restart`, `scale`) always confirm. AI helpers only gather read-only output (`get` / events) and steer toward safe next steps.
+
+**Switching clusters (you do this, not wezai):**
+
+```fish
+# one-off
+kubectl --kubeconfig ./path/to/kubeconfig get nodes
+
+# or for the session / shell
+set -x KUBECONFIG ./path/to/kubeconfig
+kubectl config use-context <context-name>
+```
+
+### Show (no model)
+
+| Action | Meaning |
+|--------|---------|
+| `@kube:ctx` | Current context + namespace + `get-contexts` |
+| `@kube:ns` | List namespaces |
+| `@kube:nodes` | `get nodes -o wide` |
+| `@kube:pods` / `@kube:pods-all` | Pods in current ns / all ns |
+| `@kube:all` | `get all` (current ns) |
+| `@kube:deploy` / `sts` / `svc` / `ing` / `cm` / `pvc` | Common resources |
+| `@kube:secrets` | Secret **names** only |
+| `@kube:events` | Events sorted by time |
+| `@kube:top-nodes` / `top-pods` | Metrics (needs metrics-server) |
+| `@kube:can-i` | `auth can-i --list` |
+
+### Shell helpers
+
+| Action | Notes |
+|--------|--------|
+| `@kube:describe` / `logs` / `logs-f` / `logs-deploy` | Prompt for names |
+| `@kube:exec` / `pf` / `pf-svc` | Interactive / port-forward |
+| `@kube:rollout` / `restart` / `scale` / `wait` | Rollout + wait; mutate confirms |
+| `@kube:diff` / `apply` / `delete-f` | Manifest workflows (confirm mutates) |
+| `@kube:use-ns` | `config set-context --current --namespace=…` |
+
+### Careful AI
+
+| Action | What it does |
+|--------|----------------|
+| `@kube:diagnose` | Attach pods + events (+ selection) → diagnose; prefers get/describe/logs |
+| `@kube:explain-sel` | Explain selected kubectl error/output |
+| `@kube:not-ready` | Focus on pods that aren’t Ready |
+
+Ask-with-context attach tokens: `@kube:pods`, `@kube:events`, `@kube:all`, `@kube:nodes`, `@kube:ctx`.
 
 ---
 

@@ -55,6 +55,7 @@ local edit = require("edit")
 local context = require("context")
 local history = require("history")
 local git = require("git")
+local kube = require("kube")
 local palette = require("palette")
 local files = require("files")
 local providers = require("providers")
@@ -273,15 +274,15 @@ local function prompt_for_ai(window, pane, config, opts)
 
     local description
     if selected_file then
-        description = "wezai — @path / @pick / @@file / @git / @history\n---\n"
+        description = "wezai — @path / @pick / @@file / @git / @kube / @history\n---\n"
             .. util.truncate(selected_file)
             .. "\n---"
     elseif selection then
-        description = "wezai — selection attached; @pick / @git / @history / @@file\n---\n"
+        description = "wezai — selection attached; @pick / @git / @kube / @history / @@file\n---\n"
             .. util.truncate(selection)
             .. "\n---"
     else
-        description = "wezai — @path / @pick (fuzzy) / @@file / @git / @history · palette CTRL+SHIFT+P"
+        description = "wezai — @path / @pick / @git / @kube / @history · palette CTRL+SHIFT+P"
         if share_pane then
             description = description .. " · sharing pane history"
         end
@@ -309,6 +310,17 @@ local function prompt_for_ai(window, pane, config, opts)
                 return
             elseif git_ref.mode == "run" then
                 git.run_action(win, p, config, git_ref.id, git_ref.extra)
+                return
+            end
+        end
+
+        local kube_ref = kube.parse_line(line)
+        if kube_ref then
+            if kube_ref.mode == "picker" then
+                palette.show(win, p, config, { scope = "kube" })
+                return
+            elseif kube_ref.mode == "run" then
+                kube.run_action(win, p, config, kube_ref.id, kube_ref.extra)
                 return
             end
         end
@@ -519,6 +531,14 @@ git._dispatch = function(win, p, request, config)
     dispatch_request(win, p, request, config, {})
 end
 
+kube._ask = function(win, p, config, prompt, user_text)
+    handle_ai_request(win, p, prompt, config, { user_text = user_text or "kube" })
+end
+
+kube._dispatch = function(win, p, request, config)
+    dispatch_request(win, p, request, config, {})
+end
+
 palette.handlers = {
     ask = function(win, p, cfg)
         prompt_for_ai(win, p, cfg, { share_pane = false })
@@ -720,6 +740,16 @@ local function apply_to_config(wezterm_config, user_config)
             config.keybinding_git.mods,
             wezterm.action_callback(function(window, pane)
                 palette.show(window, pane, config, { scope = "git" })
+            end)
+        )
+    end
+
+    if type(config.keybinding_kube) == "table" and config.keybinding_kube.key then
+        bind_key(
+            config.keybinding_kube.key,
+            config.keybinding_kube.mods,
+            wezterm.action_callback(function(window, pane)
+                palette.show(window, pane, config, { scope = "kube" })
             end)
         )
     end

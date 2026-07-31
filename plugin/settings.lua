@@ -14,6 +14,7 @@ local BASE = {
     keybinding_palette = { key = "p", mods = "CTRL|SHIFT" },
     keybinding_history = { key = "h", mods = "CTRL|SHIFT" },
     keybinding_git = { key = "g", mods = "CTRL|SHIFT" },
+    keybinding_kube = { key = "k", mods = "CTRL|SHIFT" },
     -- Shell dialect (fish/zsh/bash/…) is appended automatically per request.
     system_prompt = "You are a concise terminal assistant. Provide direct commands or brief explanations. "
         .. "Warn of dangerous commands. Avoid unnecessary verbosity. Prefer interactive commands that "
@@ -41,6 +42,11 @@ local BASE = {
         confirm_push = true,
         max_attach_bytes = 80000,
     },
+    kube = {
+        namespace = nil, -- nil → kubectl current context namespace
+        confirm_mutate = true,
+        max_attach_bytes = 80000,
+    },
     chat_max_turns = 6,
     require_edit_confirm = true,
     require_risk_confirm = true,
@@ -55,7 +61,7 @@ local BASE = {
     },
 }
 
-local NESTED = { ai_pane = true, history = true, git = true, stats = true, files = true }
+local NESTED = { ai_pane = true, history = true, git = true, kube = true, stats = true, files = true }
 
 local function deep_copy_table(t)
     local out = {}

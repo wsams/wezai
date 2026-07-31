@@ -48,6 +48,7 @@ local function is_reserved_ref(raw)
         or raw == "history"
         or raw:match("^history:") ~= nil
         or raw:match("^git:") ~= nil
+        or raw:match("^kube:") ~= nil
         or raw:match("^dir:") ~= nil
 end
 
@@ -114,6 +115,9 @@ function M.parse_at_refs(line)
             return "synthetic", raw
         end
         if raw:match("^git:") then
+            return "synthetic", raw
+        end
+        if raw:match("^kube:") then
             return "synthetic", raw
         end
         if raw:match("^dir:") then
@@ -326,6 +330,19 @@ local function resolve_synthetics(synthetics, window, pane, cwd, config)
                     })
                     table.insert(labels, "@" .. syn)
                 end
+            end
+        elseif syn:match("^kube:") then
+            local kubemod = require("kube")
+            local content, kerr = kubemod.collect_attach(syn, config)
+            if kerr then
+                table.insert(errors, "@" .. syn .. " failed: " .. kerr)
+            else
+                table.insert(blocks, {
+                    label = "Kube " .. (syn:match("^kube:(.+)$") or syn),
+                    path = "@" .. syn,
+                    content = content,
+                })
+                table.insert(labels, "@" .. syn)
             end
         elseif syn:match("^dir:") then
             local rel = syn:sub(5)
