@@ -334,8 +334,11 @@ local function resolve_synthetics(synthetics, window, pane, cwd, config)
         elseif syn:match("^kube:") then
             local kubemod = require("kube")
             local content, kerr = kubemod.collect_attach(syn, config)
-            if kerr then
+            -- Lua: only nil/false are falsy — treat "" as success (no error).
+            if kerr and kerr ~= "" then
                 table.insert(errors, "@" .. syn .. " failed: " .. kerr)
+            elseif content == nil then
+                table.insert(errors, "@" .. syn .. " failed: empty attach")
             else
                 table.insert(blocks, {
                     label = "Kube " .. (syn:match("^kube:(.+)$") or syn),

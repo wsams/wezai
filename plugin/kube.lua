@@ -869,13 +869,47 @@ function M.parse_line(line)
     return { mode = "run", id = action.id, extra = extra }
 end
 
+--- Split kube attach id: "pods", "pods/kube-system", "pods:kube-system", "pods/-A"
+local function split_attach_id(raw)
+    raw = trim(raw or "")
+    if raw == "" then
+        return "", nil
+    end
+    local slash = raw:find("/", 1, true)
+    local colon = raw:find(":", 1, true)
+    local cut = slash or colon
+    if slash and colon then
+        cut = math.min(slash, colon)
+    end
+    if not cut then
+        return raw, nil
+    end
+    return raw:sub(1, cut - 1), raw:sub(cut + 1)
+end
+
+--- Attach result helper. Never return "" as the error slot — Lua treats "" as truthy.
+local function attach_result(ok, stdout, stderr, ns, all_ns, maxb)
+    if not ok then
+        local err = trim(stderr or "")
+        if err == "" then
+            err = trim(stdout or "")
+        end
+        if err == "" then
+            err = "kubectl failed"
+        end
+        return nil, err
+    end
+    local body = trim(stdout or "")
+    if body == "" then
+        body = all_ns and "(no resources)" or ("(no resources in namespace " .. tostring(ns) .. ")")
+    end
+    return cap(body, maxb), nil
+end
+
 function M.collect_attach(syn, config)
     local raw = syn:match("^kube:(.+)$") or syn
-    local id, inline = raw:match("^([%w%-]+)([/:][^%s]+)?$")
-    if not id then
-        id = raw
-    end
-    local ns_extra = inline and inline:sub(2) or nil
+    local id, ns_extra = split_attach_id(raw)
+    id = trim(id)
     local ns, all_ns = M.resolve_namespace(config, ns_extra)
     local maxb = kube_opts(config).max_attach_bytes
     local kopts = { namespace = all_ns and nil or ns, config = config }
@@ -891,16 +925,16 @@ function M.collect_attach(syn, config)
     end
     if id == "pods" then
         local ok, stdout, stderr = get({ "get", "pods", "-o", "wide" })
-        return ok and cap(stdout, maxb) or nil, ok and nil or (stderr or stdout)
+        return attach_result(ok, stdout, stderr, ns, all_ns, maxb)
     elseif id == "events" then
         local ok, stdout, stderr = get({ "get", "events", "--sort-by=.lastTimestamp" })
-        return ok and cap(stdout, maxb) or nil, ok and nil or (stderr or stdout)
+        return attach_result(ok, stdout, stderr, ns, all_ns, maxb)
     elseif id == "all" then
         local ok, stdout, stderr = get({ "get", "all" })
-        return ok and cap(stdout, maxb) or nil, ok and nil or (stderr or stdout)
+        return attach_result(ok, stdout, stderr, ns, all_ns, maxb)
     elseif id == "nodes" then
         local ok, stdout, stderr = kubectl({ "get", "nodes", "-o", "wide" }, { config = config })
-        return ok and cap(stdout, maxb) or nil, ok and nil or (stderr or stdout)
+        return attach_result(ok, stdout, stderr, ns, false, maxb)
     elseif id == "ctx" or id == "context" then
         return "context=" .. M.current_context(config) .. " namespace=" .. tostring(ns), nil
     end
