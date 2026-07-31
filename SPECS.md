@@ -196,10 +196,11 @@ Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, 
 Kinds: `show` (print in AI pane), `shell` (run/insert in shell), `ai` (LLM with git context).
 
 Show: `status`, `diff`, `log`, `branch`, `stash`, `remote`, `whoami`.  
-Shell: rebase/soft reset/unstage/restore/latest/fetch/pull/push/pushu/sync/stash-*/switch/newbranch/add/commit/amend/identity/ignore.  
+Shell: `rebaseN`/`softN` (any positive N, or bare `rebase`/`soft` with prompt), unstage/restore/latest/fetch/pull/push/pushu/sync/stash-*/switch/newbranch/add/commit/amend/identity/ignore.  
 AI: `msg`, `explain`, `review`, `pr`, `resolve`, `fixup`.
 
-Bare `@git:status` = run action; `@git:status what should I commit?` = attach + ask (via context synthetics where supported).
+Bare `@git:status` = run action; `@git:status what should I commit?` = attach + ask (via context synthetics where supported).  
+`@git:rebase15` / `@git:soft3` embed N in the id; `@git:rebase 15` / `@git:soft 3` pass N as extra. Bare `@git:rebase` / `@git:soft` prompt for N.
 
 Always `ui.shell_pane_for` for cwd. Force git color off for AI-pane readability.
 

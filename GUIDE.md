@@ -97,7 +97,7 @@ Type to fuzzy-filter. Labels start with namespaces so filtering is easy:
 | You type | You see |
 |----------|---------|
 | `@git` | All git actions |
-| `@git:soft` | Soft reset, etc. |
+| `@git:soft` / `@git:rebase` | Soft reset / interactive rebase (any N) |
 | `@history` | Recent shell / AI commands |
 | `Ask` / `Fix` / `model` | Core helpers |
 
@@ -140,8 +140,8 @@ Mutating actions confirm, then run in your **shell** pane. Inspect actions print
 
 | Action | Runs |
 |--------|------|
-| `@git:rebase3` | `git rebase -i HEAD~3` |
-| `@git:soft1` | `git reset --soft HEAD~1` |
+| `@git:rebaseN` | `git rebase -i HEAD~N` (any positive N, e.g. `@git:rebase15`) |
+| `@git:softN` | `git reset --soft HEAD~N` (any positive N, e.g. `@git:soft1`) |
 | `@git:unstage` | Pick staged files → `git restore --staged …` |
 | `@git:restore` | Pick a file → discard worktree changes |
 | `@git:latest` | Checkout default branch + `pull --ff-only` |
@@ -293,19 +293,21 @@ Or stage, then:
 CTRL+SHIFT+G → @git:msg
 ```
 
-### “Interactive rebase last 3 commits”
+### “Interactive rebase last N commits”
 
 ```
-CTRL+SHIFT+G → @git:rebase3 → confirm
+Ask / palette → @git:rebase15 → confirm
 ```
 
-Editor opens in your shell pane.
+Or pick `@git:rebase` from the palette and enter `15` when prompted. Editor opens in your shell pane.
 
 ### “Undo my last commit but keep the changes”
 
 ```
-CTRL+SHIFT+G → @git:soft1 → confirm
+Ask / palette → @git:soft1 → confirm
 ```
+
+Or pick `@git:soft` and enter `1` when prompted.
 
 ### “New laptop — set git identity”
 
