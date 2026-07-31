@@ -1,3 +1,10 @@
+## [1.2.2](https://github.com/wsams/wezai/compare/v1.2.1...v1.2.2) (2026-07-31)
+
+
+### Bug Fixes
+
+* File matching ([c70dc41](https://github.com/wsams/wezai/commit/c70dc4178c4da96dfc0120403a6b8c1df0a1a111))
+
 ## [1.2.1](https://github.com/wsams/wezai/compare/v1.2.0...v1.2.1) (2026-07-31)
 
 
