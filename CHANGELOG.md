@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/wsams/wezai/compare/v1.2.5...v1.3.0) (2026-07-31)
+
+
+### Features
+
+* SPECS and kube ([0f741c4](https://github.com/wsams/wezai/commit/0f741c4a8aff2b29f1f0be2e317af0996132a0a6))
+
 ## [1.2.5](https://github.com/wsams/wezai/compare/v1.2.4...v1.2.5) (2026-07-31)
 
 
