@@ -36,6 +36,34 @@ function M.redact(text)
     return s
 end
 
+-- Trailing sentence punctuation commonly stuck to @refs: `@package.json?`
+local TRAIL_PUNCT = "[%?%!%.,;:%]%}%)'\"…]+$"
+
+local function is_reserved_ref(raw)
+    return raw == "clipboard"
+        or raw == "selection"
+        or raw == "pick"
+        or raw == "history"
+        or raw:match("^history:") ~= nil
+        or raw:match("^git:") ~= nil
+        or raw:match("^dir:") ~= nil
+end
+
+--- Strip trailing punctuation from unquoted @paths (keeps reserved synthetics intact).
+function M.sanitize_path_token(path, quoted)
+    if not path or path == "" or quoted then
+        return path
+    end
+    if is_reserved_ref(path) then
+        return path
+    end
+    local cleaned = path:gsub(TRAIL_PUNCT, "")
+    if cleaned == "" then
+        return path
+    end
+    return cleaned
+end
+
 function M.parse_at_refs(line)
     local paths = {}
     local edit_paths = {}
@@ -48,7 +76,9 @@ function M.parse_at_refs(line)
         local next_ch = line:sub(start_idx, start_idx)
         local path
         local i
+        local quoted = false
         if next_ch == '"' or next_ch == "'" then
+            quoted = true
             local quote = next_ch
             local close = line:find(quote, start_idx + 1, true)
             if close then
@@ -69,12 +99,13 @@ function M.parse_at_refs(line)
             end
             path = line:sub(start_idx, j - 1)
             i = j
+            path = M.sanitize_path_token(path, false)
         end
-        return path, i
+        return path, i, quoted
     end
 
     local function classify_ref(raw)
-        if raw == "clipboard" or raw == "selection" then
+        if raw == "clipboard" or raw == "selection" or raw == "pick" then
             return "synthetic", raw
         end
         if raw == "history" or raw:match("^history:") then
@@ -140,7 +171,7 @@ local function selection_as_file_path(selection, cwd)
     if not candidate or candidate == "" then
         return nil
     end
-    candidate = candidate:gsub("[,:;]+$", "")
+    candidate = M.sanitize_path_token(candidate:gsub("^[@]+", ""), false)
     local expanded = util.expand_path(candidate, cwd)
     if expanded and util.path_exists_as_file(expanded) then
         return expanded

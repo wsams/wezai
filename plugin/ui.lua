@@ -558,7 +558,8 @@ function M.input_select(window, pane, title, choices, callback, opts)
         act.InputSelector({
             title = M.sanitize_utf8(title or "wezai"),
             choices = safe,
-            fuzzy = fuzzy,
+            fuzzy = fuzzy and true or false,
+            fuzzy_description = opts.fuzzy_description or "Fuzzy matching: ",
             action = wezterm.action_callback(function(win, p, id, label)
                 -- InputSelector may hand back the AI pane as `p` — normalize to shell
                 local sp = M.shell_pane_for(win, p)

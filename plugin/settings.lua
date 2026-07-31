@@ -44,9 +44,11 @@ local BASE = {
     require_risk_confirm = true,
     -- Usage DB: ~/.local/share/wezai/stats.json (override with stats.path)
     stats = { enabled = true, path = nil },
+    -- Fuzzy @pick / @@pick file listing (fd → git ls-files → find)
+    files = { max_candidates = 400 },
 }
 
-local NESTED = { ai_pane = true, history = true, git = true, stats = true }
+local NESTED = { ai_pane = true, history = true, git = true, stats = true, files = true }
 
 local function deep_copy_table(t)
     local out = {}

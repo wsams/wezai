@@ -66,8 +66,15 @@ function M.show(window, pane, config, opts)
                     H.explain_cmd(win, p, cfg)
                 end
             end)
-            add(choices, handlers, "core:edit", "Edit file (@@path …)", function(win, p, cfg)
-                if H.edit then
+            add(choices, handlers, "core:attach_file", "Attach file… (@pick fuzzy)", function(win, p, cfg)
+                if H.attach_file then
+                    H.attach_file(win, p, cfg)
+                end
+            end)
+            add(choices, handlers, "core:edit", "Edit file… (@@pick fuzzy)", function(win, p, cfg)
+                if H.edit_file then
+                    H.edit_file(win, p, cfg)
+                elseif H.edit then
                     H.edit(win, p, cfg)
                 end
             end)

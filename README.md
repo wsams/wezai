@@ -91,8 +91,10 @@ More examples: [GUIDE.md](GUIDE.md).
 
 | In the Ask prompt | Meaning |
 |-------------------|---------|
-| `@file` | Attach a file (read-only) |
+| `@file` | Attach a file (read-only). Trailing `?!.` etc. are ignored (`@package.json?` works) |
+| `@` / `@pick` | Fuzzy file picker (type to filter), then ask |
 | `@@file instruction` | Rewrite the file (diff + confirm) |
+| `@@` / `@@pick` | Fuzzy pick a file to edit, then type the instruction |
 | `@clipboard` / `@selection` | Clipboard or terminal selection |
 | `@git:status` + a question | Attach status and ask |
 | `@git:status` alone | Run the **git status** action (no LLM) |
@@ -159,6 +161,7 @@ plugin/
   util.lua
   settings.lua   -- defaults + user merge
   stats.lua      -- token/model usage DB
+  files.lua      -- fuzzy @pick / @@pick via InputSelector
   providers/     -- chat_http, gemini_api, ollama_bin, lms_bin
 ```
 

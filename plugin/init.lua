@@ -56,6 +56,7 @@ local context = require("context")
 local history = require("history")
 local git = require("git")
 local palette = require("palette")
+local files = require("files")
 local providers = require("providers")
 local settings = require("settings")
 local stats = require("stats")
@@ -263,15 +264,15 @@ local function prompt_for_ai(window, pane, config, opts)
 
     local description
     if selected_file then
-        description = "wezai — @path / @@file / @git / @history\n---\n"
+        description = "wezai — @path / @pick / @@file / @git / @history\n---\n"
             .. util.truncate(selected_file)
             .. "\n---"
     elseif selection then
-        description = "wezai — selection attached; @git / @history / @@file\n---\n"
+        description = "wezai — selection attached; @pick / @git / @history / @@file\n---\n"
             .. util.truncate(selection)
             .. "\n---"
     else
-        description = "wezai — @path / @@file / @git / @history · palette CTRL+SHIFT+P"
+        description = "wezai — @path / @pick (fuzzy) / @@file / @git / @history · palette CTRL+SHIFT+P"
         if share_pane then
             description = description .. " · sharing pane history"
         end
@@ -280,49 +281,152 @@ local function prompt_for_ai(window, pane, config, opts)
         description = opts.prefill_hint .. "\n" .. description
     end
 
+    local function process_ask_line(win, p, line)
+        if line == nil then
+            return
+        end
+
+        local bare = history.parse_bare_ref(line)
+        if bare ~= nil then
+            local scope = (bare == "" or bare == "all") and "history" or ("history:" .. bare)
+            palette.show(win, p, config, { scope = scope })
+            return
+        end
+
+        local git_ref = git.parse_line(line)
+        if git_ref then
+            if git_ref.mode == "picker" then
+                palette.show(win, p, config, { scope = "git" })
+                return
+            elseif git_ref.mode == "run" then
+                git.run_action(win, p, config, git_ref.id, git_ref.extra)
+                return
+            end
+        end
+
+        local function run_prepared(req_line)
+            local request, err = context.prepare_request(win, p, req_line, selection, config)
+            if err then
+                if err:find("file not found", 1, true) then
+                    local parsed = context.parse_at_refs(req_line)
+                    local mode = (#parsed.edit_paths > 0) and "edit" or "attach"
+                    local hint = err:match("([^/\\]+)$") or "file"
+                    files.show_picker(win, p, config, {
+                        mode = mode,
+                        title = "No exact match — fuzzy pick a file",
+                        fuzzy_description = "Filter (tried " .. hint .. "): ",
+                        on_chosen = function(w2, p2, rel)
+                            local rest = parsed.rest or ""
+                            local rebuilt
+                            if mode == "edit" then
+                                rebuilt = "@@" .. rel .. (rest ~= "" and (" " .. rest) or "")
+                            else
+                                rebuilt = "@" .. rel .. (rest ~= "" and (" " .. rest) or "")
+                            end
+                            process_ask_line(w2, p2, rebuilt)
+                        end,
+                    })
+                    return
+                end
+                local ai_pane = ui.ensure_ai_pane(win, p, config)
+                ui.ai_print(ai_pane, "wezai: " .. err, "error")
+                return
+            end
+            if not request then
+                return
+            end
+            if opts.extra_context and opts.extra_context ~= "" then
+                request.prompt = "Context from history:\n```\n"
+                    .. context.redact(opts.extra_context)
+                    .. "\n```\n\n"
+                    .. (request.prompt or "")
+            end
+            dispatch_request(win, p, request, config, { share_pane = share_pane })
+        end
+
+        local pick = files.parse_pick_line(line)
+        if pick then
+            files.show_picker(win, p, config, {
+                mode = pick.mode,
+                on_chosen = function(w2, p2, rel)
+                    local rest = pick.rest or ""
+                    local rebuilt
+                    if pick.mode == "edit" then
+                        rebuilt = "@@" .. rel .. (rest ~= "" and (" " .. rest) or "")
+                    else
+                        rebuilt = "@" .. rel .. (rest ~= "" and (" " .. rest) or "")
+                    end
+                    if pick.mode == "edit" and (rest == "" or rest:match("^%s*$")) then
+                        -- Need an edit instruction after pick
+                        w2:perform_action(
+                            action.PromptInputLine({
+                                description = "Edit instruction for " .. rel,
+                                action = wezterm.action_callback(function(w3, p3, instr)
+                                    if instr == nil or instr:match("^%s*$") then
+                                        return
+                                    end
+                                    process_ask_line(w3, p3, "@@" .. rel .. " " .. instr)
+                                end),
+                            }),
+                            p2
+                        )
+                        return
+                    end
+                    process_ask_line(w2, p2, rebuilt)
+                end,
+            })
+            return
+        end
+
+        -- `@pick` / `@@pick` embedded among other text
+        local parsed = context.parse_at_refs(line)
+        local embedded_pick = false
+        local embed_mode = "attach"
+        for _, syn in ipairs(parsed.synthetics) do
+            if syn == "pick" then
+                embedded_pick = true
+            end
+        end
+        for _, ep in ipairs(parsed.edit_paths) do
+            if ep == "pick" then
+                embedded_pick = true
+                embed_mode = "edit"
+            end
+        end
+        if embedded_pick then
+            files.show_picker(win, p, config, {
+                mode = embed_mode,
+                on_chosen = function(w2, p2, rel)
+                    local rest = parsed.rest or ""
+                    local rebuilt
+                    if embed_mode == "edit" then
+                        rebuilt = "@@" .. rel .. (rest ~= "" and (" " .. rest) or "")
+                    else
+                        -- keep any other non-pick path refs from the original line
+                        local extras = {}
+                        for _, path in ipairs(parsed.paths) do
+                            extras[#extras + 1] = "@" .. path
+                        end
+                        rebuilt = table.concat(extras, " ")
+                        if rebuilt ~= "" then
+                            rebuilt = rebuilt .. " "
+                        end
+                        rebuilt = rebuilt .. "@" .. rel .. (rest ~= "" and (" " .. rest) or "")
+                    end
+                    process_ask_line(w2, p2, rebuilt)
+                end,
+            })
+            return
+        end
+
+        run_prepared(line)
+    end
+
     window:perform_action(
         action.PromptInputLine({
             description = description,
             action = wezterm.action_callback(function(win, p, line)
-                if line == nil then
-                    return
-                end
-
-                local bare = history.parse_bare_ref(line)
-                if bare ~= nil then
-                    local scope = (bare == "" or bare == "all") and "history" or ("history:" .. bare)
-                    palette.show(win, p, config, { scope = scope })
-                    return
-                end
-
-                local git_ref = git.parse_line(line)
-                if git_ref then
-                    if git_ref.mode == "picker" then
-                        palette.show(win, p, config, { scope = "git" })
-                        return
-                    elseif git_ref.mode == "run" then
-                        git.run_action(win, p, config, git_ref.id, git_ref.extra)
-                        return
-                    end
-                    -- mode == "attach": fall through to prepare_request
-                end
-
-                local request, err = context.prepare_request(win, p, line, selection, config)
-                if err then
-                    local ai_pane = ui.ensure_ai_pane(win, p, config)
-                    ui.ai_print(ai_pane, "wezai: " .. err, "error")
-                    return
-                end
-                if not request then
-                    return
-                end
-                if opts.extra_context and opts.extra_context ~= "" then
-                    request.prompt = "Context from history:\n```\n"
-                        .. context.redact(opts.extra_context)
-                        .. "\n```\n\n"
-                        .. (request.prompt or "")
-                end
-                dispatch_request(win, p, request, config, { share_pane = share_pane })
+                process_ask_line(win, p, line)
             end),
         }),
         pane
@@ -424,6 +528,63 @@ palette.handlers = {
     end,
     edit = function(win, p, cfg)
         prompt_for_ai(win, p, cfg, { share_pane = false })
+    end,
+    attach_file = function(win, p, cfg)
+        files.show_picker(win, p, cfg, {
+            mode = "attach",
+            on_chosen = function(w2, p2, rel)
+                w2:perform_action(
+                    action.PromptInputLine({
+                        description = "Question about @" .. rel .. " (Enter = explain file)",
+                        action = wezterm.action_callback(function(w3, p3, q)
+                            if q == nil then
+                                return
+                            end
+                            local line = "@" .. rel
+                            if q ~= "" and not q:match("^%s*$") then
+                                line = line .. " " .. q
+                            end
+                            local request, err = context.prepare_request(w3, p3, line, util.get_selection(w3, p3), cfg)
+                            if err then
+                                ui.ai_print(ui.ensure_ai_pane(w3, p3, cfg), "wezai: " .. err, "error")
+                                return
+                            end
+                            if request then
+                                dispatch_request(w3, p3, request, cfg, {})
+                            end
+                        end),
+                    }),
+                    p2
+                )
+            end,
+        })
+    end,
+    edit_file = function(win, p, cfg)
+        files.show_picker(win, p, cfg, {
+            mode = "edit",
+            on_chosen = function(w2, p2, rel)
+                w2:perform_action(
+                    action.PromptInputLine({
+                        description = "Edit instruction for " .. rel,
+                        action = wezterm.action_callback(function(w3, p3, instr)
+                            if instr == nil or instr:match("^%s*$") then
+                                return
+                            end
+                            local line = "@@" .. rel .. " " .. instr
+                            local request, err = context.prepare_request(w3, p3, line, nil, cfg)
+                            if err then
+                                ui.ai_print(ui.ensure_ai_pane(w3, p3, cfg), "wezai: " .. err, "error")
+                                return
+                            end
+                            if request then
+                                dispatch_request(w3, p3, request, cfg, {})
+                            end
+                        end),
+                    }),
+                    p2
+                )
+            end,
+        })
     end,
     undo_edit = function(win, p, cfg)
         edit.undo_last_edit(win, ui.ensure_ai_pane(win, p, cfg))
