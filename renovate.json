@@ -33,7 +33,7 @@
       "description": "Leave npm majors for a quick look",
       "matchManagers": ["npm"],
       "matchUpdateTypes": ["major"],
-      "automerge": false
+      "automerge": true
     }
   ],
   "vulnerabilityAlerts": {
