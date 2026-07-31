@@ -1,3 +1,10 @@
+## [1.2.5](https://github.com/wsams/wezai/compare/v1.2.4...v1.2.5) (2026-07-31)
+
+
+### Bug Fixes
+
+* Increase context processing size ([228561f](https://github.com/wsams/wezai/commit/228561feb662b7ab3c2300557b519c462d7143c4))
+
 ## [1.2.4](https://github.com/wsams/wezai/compare/v1.2.3...v1.2.4) (2026-07-31)
 
 

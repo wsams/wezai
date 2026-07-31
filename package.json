@@ -1,6 +1,6 @@
 {
   "name": "wezai",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "private": true,
   "description": "AI-powered WezTerm plugin with a command palette and utilities",
   "repository": {
