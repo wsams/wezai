@@ -135,7 +135,14 @@ wezai.apply_to_config(config, {
   chat_max_turns = 6,
   require_edit_confirm = true,
   require_risk_confirm = true,
-  max_file_bytes = 100000,
+  -- Soft attach budget. Larger @files are sent as head+tail (not rejected).
+  -- @@edit still needs the full file under this limit (or split the file).
+  max_file_bytes = 200000,
+  files = {
+    large_file = "head_tail", -- or "head" / "error"
+    -- head_bytes = 120000,
+    -- tail_bytes = 80000,
+  },
   backup_suffix = ".wezai.bak",
 
   -- Token/model usage (shown when the AI pane opens; persisted under ~/.local/share/wezai/stats.json)

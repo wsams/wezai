@@ -23,7 +23,9 @@ local BASE = {
     show_loading = true,
     type = "http",
     api_key = nil,
-    max_file_bytes = 100000,
+    -- Soft budget for @attach (oversized files send head+tail by default).
+    -- @@edit still requires the full file under this limit.
+    max_file_bytes = 200000,
     backup_suffix = ".wezai.bak",
     ai_pane = { enabled = true, direction = "Right", size_percent = 35, pad_cols = 2 },
     history = {
@@ -44,8 +46,13 @@ local BASE = {
     require_risk_confirm = true,
     -- Usage DB: ~/.local/share/wezai/stats.json (override with stats.path)
     stats = { enabled = true, path = nil },
-    -- Fuzzy @pick / @@pick file listing (fd → git ls-files → find)
-    files = { max_candidates = 400 },
+    -- Fuzzy @pick + large-file attach policy
+    files = {
+        max_candidates = 400,
+        large_file = "head_tail", -- "head_tail" | "head" | "error"
+        head_bytes = nil, -- default: ~60% of max_file_bytes
+        tail_bytes = nil, -- default: remainder
+    },
 }
 
 local NESTED = { ai_pane = true, history = true, git = true, stats = true, files = true }

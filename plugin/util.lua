@@ -185,29 +185,104 @@ function M.path_exists_as_dir(path)
 end
 
 function M.read_text_file(path, max_bytes)
+    local ok, content_or_err, meta = M.read_text_file_smart(path, {
+        max_bytes = max_bytes,
+        large_file = "error",
+    })
+    if not ok then
+        return false, content_or_err
+    end
+    return true, content_or_err, meta
+end
+
+--- Read a text file; oversized files can be head+tail truncated for AI attach.
+--- opts: max_bytes, large_file ("error"|"head_tail"|"head"), head_bytes, tail_bytes
+--- @return ok, content_or_err, meta
+function M.read_text_file_smart(path, opts)
+    opts = opts or {}
+    local max_bytes = opts.max_bytes or 100000
+    local mode = opts.large_file or "head_tail"
     local f, err = io.open(path, "rb")
     if not f then
-        return false, "cannot read file: " .. (err or path)
+        return false, "cannot read file: " .. (err or path), nil
     end
     local size = f:seek("end")
     if not size then
         f:close()
-        return false, "cannot determine size: " .. path
+        return false, "cannot determine size: " .. path, nil
     end
-    if max_bytes and size > max_bytes then
+
+    if size <= max_bytes then
+        f:seek("set")
+        local content = f:read("*a")
         f:close()
-        return false, string.format("file too large (%d bytes, max %d): %s", size, max_bytes, path)
+        if content == nil then
+            return false, "failed to read: " .. path, nil
+        end
+        if content:find("\0", 1, true) then
+            return false, "binary file not supported: " .. path, nil
+        end
+        return true, content, { truncated = false, size = size }
     end
+
+    if mode == "error" then
+        f:close()
+        return false,
+            string.format(
+                "file too large (%d bytes, max %d): %s — raise max_file_bytes or rely on head/tail attach",
+                size,
+                max_bytes,
+                path
+            ),
+            nil
+    end
+
+    local head_n = tonumber(opts.head_bytes) or math.floor(max_bytes * 0.6)
+    local tail_n = tonumber(opts.tail_bytes) or math.max(0, max_bytes - head_n)
+    if head_n < 1 then
+        head_n = math.floor(max_bytes * 0.6)
+    end
+    if mode == "head" then
+        tail_n = 0
+        head_n = max_bytes
+    end
+    if head_n + tail_n > size then
+        -- Degenerate: just read whole file
+        f:seek("set")
+        local content = f:read("*a")
+        f:close()
+        return true, content, { truncated = false, size = size }
+    end
+
     f:seek("set")
-    local content = f:read("*a")
+    local head = f:read(head_n) or ""
+    local tail = ""
+    if tail_n > 0 then
+        f:seek("end", -tail_n)
+        tail = f:read(tail_n) or ""
+    end
     f:close()
-    if content == nil then
-        return false, "failed to read: " .. path
+
+    if head:find("\0", 1, true) or (tail ~= "" and tail:find("\0", 1, true)) then
+        return false, "binary file not supported: " .. path, nil
     end
-    if content:find("\0", 1, true) then
-        return false, "binary file not supported: " .. path
-    end
-    return true, content
+
+    local omitted = size - #head - #tail
+    local marker = string.format(
+        "\n\n… [truncated %d bytes from middle — file is %d bytes; attached head %d + tail %d] …\n\n",
+        omitted,
+        size,
+        #head,
+        #tail
+    )
+    local content = head .. marker .. tail
+    return true, content, {
+        truncated = true,
+        size = size,
+        head_bytes = #head,
+        tail_bytes = #tail,
+        omitted_bytes = omitted,
+    }
 end
 
 function M.write_text_file(path, content)

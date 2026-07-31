@@ -243,7 +243,11 @@ local function dispatch_request(window, shell_pane, request, config, opts)
         local names = {}
         for _, file in ipairs(request.files) do
             local tag = (request.mode == "edit" and file.path == request.target_path) and "edit:" or ""
-            table.insert(names, tag .. (file.path or "?"))
+            local name = tag .. (file.path or "?")
+            if file.truncated then
+                name = name .. " (truncated " .. tostring(file.size or "?") .. "B)"
+            end
+            table.insert(names, name)
         end
         ui.ai_print(ai_pane, "Attached: " .. table.concat(names, ", "), "attach")
     end

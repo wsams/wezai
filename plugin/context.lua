@@ -185,15 +185,32 @@ local function build_files_section(files)
     local parts = {}
     for _, file in ipairs(files) do
         local label = file.label or "File"
+        if file.truncated then
+            label = label
+                .. " (TRUNCATED — "
+                .. tostring(file.size or "?")
+                .. " bytes total; head+tail only)"
+        end
         table.insert(parts, label .. ": " .. (file.path or "?") .. "\n```\n" .. file.content .. "\n```")
     end
     return table.concat(parts, "\n\n")
 end
 
-local function resolve_and_read_files(raw_paths, cwd, max_bytes, seen)
+local function attach_read_opts(config, max_bytes)
+    local f = (config and config.files) or {}
+    return {
+        max_bytes = max_bytes or (config and config.max_file_bytes) or 100000,
+        large_file = f.large_file or "head_tail",
+        head_bytes = f.head_bytes,
+        tail_bytes = f.tail_bytes,
+    }
+end
+
+local function resolve_and_read_files(raw_paths, cwd, max_bytes, seen, config)
     seen = seen or {}
     local files = {}
     local errors = {}
+    local read_opts = attach_read_opts(config, max_bytes)
     for _, raw in ipairs(raw_paths) do
         local abs = util.expand_path(raw, cwd)
         if not abs then
@@ -203,9 +220,14 @@ local function resolve_and_read_files(raw_paths, cwd, max_bytes, seen)
             if not util.path_exists_as_file(abs) then
                 table.insert(errors, "file not found: " .. abs)
             else
-                local ok, content_or_err = util.read_text_file(abs, max_bytes)
+                local ok, content_or_err, meta = util.read_text_file_smart(abs, read_opts)
                 if ok then
-                    table.insert(files, { path = abs, content = content_or_err })
+                    table.insert(files, {
+                        path = abs,
+                        content = content_or_err,
+                        truncated = meta and meta.truncated,
+                        size = meta and meta.size,
+                    })
                 else
                     table.insert(errors, content_or_err)
                 end
@@ -225,9 +247,12 @@ local function resolve_edit_target(raw, cwd, max_bytes)
         return nil, "edit target is a directory: " .. abs
     end
     if util.path_exists_as_file(abs) then
+        -- Edits need the full file; do not silently truncate.
         local ok, content_or_err = util.read_text_file(abs, max_bytes)
         if not ok then
-            return nil, content_or_err
+            return nil,
+                content_or_err
+                    .. " (@@ edit needs the full file — raise max_file_bytes, or split the file)"
         end
         return { path = abs, content = content_or_err, is_new = false }, nil
     end
@@ -364,7 +389,7 @@ function M.prepare_request(window, pane, line, selection, config)
         seen[target.path] = true
 
         local context_files, ctx_errors
-        context_files, ctx_errors, seen = resolve_and_read_files(parsed.paths, cwd, max_bytes, seen)
+        context_files, ctx_errors, seen = resolve_and_read_files(parsed.paths, cwd, max_bytes, seen, config)
         if #ctx_errors > 0 then
             return nil, table.concat(ctx_errors, "; ")
         end
@@ -374,11 +399,17 @@ function M.prepare_request(window, pane, line, selection, config)
 
         local selected_file = selection_as_file_path(selection, cwd)
         if selected_file and not seen[selected_file] then
-            local ok, content_or_err = util.read_text_file(selected_file, max_bytes)
+            local ok, content_or_err, meta = util.read_text_file_smart(selected_file, attach_read_opts(config, max_bytes))
             if not ok then
                 return nil, content_or_err
             end
-            table.insert(context_files, { path = selected_file, content = content_or_err })
+            table.insert(context_files, {
+                path = selected_file,
+                content = content_or_err,
+                truncated = meta and meta.truncated,
+                size = meta and meta.size,
+            })
+            seen[selected_file] = true
         end
 
         local parts = {}
@@ -441,52 +472,20 @@ function M.prepare_request(window, pane, line, selection, config)
         return nil, table.concat(synth_errors, "; ")
     end
 
-    local file_paths = {}
-    local function add_path(raw_or_abs, already_absolute)
-        local abs = already_absolute and raw_or_abs or util.expand_path(raw_or_abs, cwd)
-        if not abs then
-            return "cannot resolve path (no pane cwd?): " .. tostring(raw_or_abs)
-        end
-        if seen[abs] then
-            return nil
-        end
-        seen[abs] = true
-        table.insert(file_paths, abs)
-        return nil
-    end
-
     local selected_file = selection_as_file_path(selection, cwd)
     local selection_text = nil
+    local path_list = {}
+    for _, raw in ipairs(parsed.paths) do
+        path_list[#path_list + 1] = raw
+    end
     if selected_file then
-        local err = add_path(selected_file, true)
-        if err then
-            return nil, err
-        end
+        path_list[#path_list + 1] = selected_file
     elseif selection then
         selection_text = selection
     end
 
-    for _, raw in ipairs(parsed.paths) do
-        local err = add_path(raw, false)
-        if err then
-            return nil, err
-        end
-    end
-
-    local files = {}
-    local errors = {}
-    for _, abs in ipairs(file_paths) do
-        if not util.path_exists_as_file(abs) then
-            table.insert(errors, "file not found: " .. abs)
-        else
-            local ok, content_or_err = util.read_text_file(abs, max_bytes)
-            if ok then
-                table.insert(files, { path = abs, content = content_or_err })
-            else
-                table.insert(errors, content_or_err)
-            end
-        end
-    end
+    local files, errors
+    files, errors, seen = resolve_and_read_files(path_list, cwd, max_bytes, seen, config)
     if #errors > 0 then
         return nil, table.concat(errors, "; ")
     end
