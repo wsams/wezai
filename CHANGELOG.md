@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/wsams/wezai/compare/v1.4.0...v1.5.0) (2026-07-31)
+
+
+### Features
+
+* **tf:** add terraform helper catalog with AI generate/debug ([#11](https://github.com/wsams/wezai/issues/11)) ([d43b488](https://github.com/wsams/wezai/commit/d43b488ffb3b64c687918cd4ca2829f802170e98))
+
 # [1.4.0](https://github.com/wsams/wezai/compare/v1.3.3...v1.4.0) (2026-07-31)
 
 
