@@ -63,16 +63,22 @@ local function looks_failed(text)
     return false
 end
 
--- Parse bare @history / @history:shell / @history:ai / @history:failed.
+-- Parse bare @history / @history:shell / @history:ai / @history:failed
+-- (optional :N is ignored for palette scope — use attach for limits).
 -- Returns filter ("", "shell", "ai", "failed") or nil if not a bare history ref.
 function M.parse_bare_ref(line)
     local token = trim(line or "")
     if token == "@history" then
         return ""
     end
-    local rest = token:match("^@history:([%w%-]+)$")
-    if rest == "shell" or rest == "ai" or rest == "failed" then
-        return rest
+    local rest = token:match("^@history:([%w%-:]+)$")
+    if not rest then
+        return nil
+    end
+    -- Strip optional :N limit for palette scoping
+    local filter = rest:match("^(shell|ai|failed):%d+$") or rest
+    if filter == "shell" or filter == "ai" or filter == "failed" then
+        return filter
     end
     return nil
 end
@@ -93,9 +99,19 @@ function M.parse_history_spec(raw)
     if not rest then
         return "all", nil
     end
+    -- history:shell:40 / history:ai:20 / history:failed:15
+    local filter, nstr = rest:match("^(shell|ai|failed):(%d+)$")
+    if filter then
+        local n = tonumber(nstr)
+        if n and n > 0 then
+            return filter, math.floor(n)
+        end
+        return filter, nil
+    end
     if rest == "shell" or rest == "ai" or rest == "failed" then
         return rest, nil
     end
+    -- history:40
     local n = tonumber(rest)
     if n and n > 0 then
         return "all", math.floor(n)

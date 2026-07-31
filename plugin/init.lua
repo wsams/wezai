@@ -321,7 +321,7 @@ local function prompt_for_ai(window, pane, config, opts)
                 palette.show(win, p, config, { scope = "kube" })
                 return
             elseif kube_ref.mode == "run" then
-                kube.run_action(win, p, config, kube_ref.id, kube_ref.extra)
+                kube.run_action(win, p, config, kube_ref.id, kube_ref.extra, { count = kube_ref.count })
                 return
             end
         end

@@ -358,6 +358,41 @@ end
 local ACTIONS = {}
 local ACTION_ORDER = {}
 
+-- Peel trailing N from logs500 / logs-f100 / logs-deploy200.
+local function split_tail_id(id)
+    id = id or ""
+    for _, base in ipairs({ "logs-deploy", "logs-f", "logs" }) do
+        local n = id:match("^" .. base:gsub("%-", "%%-") .. "(%d+)$")
+        if n then
+            return base, tonumber(n)
+        end
+    end
+    return id, nil
+end
+
+local function positive_count(raw)
+    local n = tonumber(raw)
+    if n and n == math.floor(n) and n >= 1 then
+        return n
+    end
+    return nil
+end
+
+-- Resolve --tail for logs*: embedded count, else numeric extra, else default.
+local function logs_tail(ctx, default_n)
+    if ctx.count then
+        local n = positive_count(ctx.count)
+        if n then
+            return n
+        end
+    end
+    local n = positive_count(ctx.extra)
+    if n then
+        return n
+    end
+    return default_n
+end
+
 local function add(a)
     ACTIONS[a.id] = a
     table.insert(ACTION_ORDER, a.id)
@@ -559,28 +594,31 @@ add({
 add({
     id = "logs",
     kind = "shell",
-    label = "logs <pod> (current ns)",
+    label = "logsN <pod> — --tail=N (default 200)",
     run = function(ctx)
-        finalize_command(ctx, "kubectl logs <pod> -n <namespace> --tail=200", { execute = true })
+        local tail = logs_tail(ctx, 200)
+        finalize_command(ctx, "kubectl logs <pod> -n <namespace> --tail=" .. tail, { execute = true })
     end,
 })
 
 add({
     id = "logs-f",
     kind = "shell",
-    label = "logs -f <pod>",
+    label = "logs-fN <pod> — follow --tail=N (default 100)",
     aliases = { "logs-follow" },
     run = function(ctx)
-        finalize_command(ctx, "kubectl logs -f <pod> -n <namespace> --tail=100", { execute = true })
+        local tail = logs_tail(ctx, 100)
+        finalize_command(ctx, "kubectl logs -f <pod> -n <namespace> --tail=" .. tail, { execute = true })
     end,
 })
 
 add({
     id = "logs-deploy",
     kind = "shell",
-    label = "logs deployment/<name>",
+    label = "logs-deployN — deploy logs --tail=N (default 200)",
     run = function(ctx)
-        finalize_command(ctx, "kubectl logs deployment/<deploy> -n <namespace> --tail=200", { execute = true })
+        local tail = logs_tail(ctx, 200)
+        finalize_command(ctx, "kubectl logs deployment/<deploy> -n <namespace> --tail=" .. tail, { execute = true })
     end,
 })
 
@@ -837,7 +875,15 @@ function M.list_actions()
 end
 
 function M.get_action(id)
-    return ACTIONS[id]
+    local a = ACTIONS[id]
+    if a then
+        return a
+    end
+    local base = select(1, split_tail_id(id))
+    if base ~= id then
+        return ACTIONS[base]
+    end
+    return nil
 end
 
 function M.parse_line(line)
@@ -845,11 +891,13 @@ function M.parse_line(line)
     if token == "@kube" or token == "@kube:" then
         return { mode = "picker" }
     end
-    -- @kube:pods | @kube:pods kube-system | @kube:pods/kube-system | @kube:pods:kube-system
+    -- @kube:pods | @kube:pods kube-system | @kube:pods/kube-system | @kube:logs500
     local id, inline, rest = token:match("^@kube:([%w%-]+)([/:][^%s]+)?%s*(.-)%s*$")
     if not id then
         return nil
     end
+    local embedded_n
+    id, embedded_n = split_tail_id(id)
     local action = ACTIONS[id]
     if not action then
         return nil
@@ -863,10 +911,23 @@ function M.parse_line(line)
             extra = from_inline .. " " .. extra
         end
     end
-    if extra == "" then
+    -- Numeric-only extra on logs* is --tail N (not a namespace).
+    local count = embedded_n
+    if not count and (id == "logs" or id == "logs-f" or id == "logs-deploy") and positive_count(extra) then
+        count = positive_count(extra)
+        extra = ""
+    end
+    if extra == "" and not count then
         return { mode = "run", id = action.id }
     end
-    return { mode = "run", id = action.id, extra = extra }
+    local out = { mode = "run", id = action.id }
+    if extra ~= "" then
+        out.extra = extra
+    end
+    if count then
+        out.count = count
+    end
+    return out
 end
 
 --- Split kube attach id: "pods", "pods/kube-system", "pods:kube-system", "pods/-A"
@@ -941,9 +1002,12 @@ function M.collect_attach(syn, config)
     return nil, "unknown @kube attach: " .. tostring(syn)
 end
 
-function M.run_action(window, pane, config, id, extra)
+function M.run_action(window, pane, config, id, extra, opts)
+    opts = opts or {}
     local shell_pane = ui.shell_pane_for(window, pane)
     local ai_pane = ui.ensure_ai_pane(window, shell_pane, config)
+    local embedded_n
+    id, embedded_n = split_tail_id(id)
     local action = ACTIONS[id]
     if not action then
         ui.ai_print(ai_pane, "Unknown @kube:" .. tostring(id) .. " — try @kube for the picker", "error")
@@ -966,12 +1030,14 @@ function M.run_action(window, pane, config, id, extra)
             return
         end
     end
+    local count = opts.count or embedded_n
     action.run({
         window = window,
         pane = shell_pane,
         ai_pane = ai_pane,
         config = config,
         extra = extra,
+        count = count,
     })
 end
 

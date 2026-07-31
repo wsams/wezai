@@ -194,17 +194,18 @@ Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, 
 - Sources: fish/zsh/bash history files (tailed), optional scrollback, session events (ask/ai-cmd/edit).
 - Config: `history.max_shell`, `palette_n`, `tail_bytes`, `attach_n`, `include_scrollback`, `max_session`.
 - Row actions: Run / Insert / Explain / Attach & ask / Copy.
+- Attach limits: `@history:40` (all, N entries), `@history:shell:40` / `@history:ai:20` / `@history:failed:15` (filter + N). Default limit = `attach_n` (40). Bare `@history` / `@history:shell` open the palette.
 
 ### 5.4 `@git` catalog (`git.lua`)
 
 Kinds: `show` (print in AI pane), `shell` (run/insert in shell), `ai` (LLM with git context).
 
-Show: `status`, `diff`, `log`, `branch`, `stash`, `remote`, `whoami`.  
+Show: `status`, `diff`, `logN` (default 15), `branch`, `stash`, `remote`, `whoami`.  
 Shell: `rebaseN`/`softN` (any positive N, or bare `rebase`/`soft` with prompt), unstage/restore/latest/fetch/pull/push/pushu/sync/stash-*/switch/newbranch/add/commit/amend/identity/ignore.  
 AI: `msg`, `explain`, `review`, `pr`, `resolve`, `fixup`.
 
 Bare `@git:status` = run action; `@git:status what should I commit?` = attach + ask (via context synthetics where supported).  
-`@git:rebase15` / `@git:soft3` embed N in the id; `@git:rebase 15` / `@git:soft 3` pass N as extra. Bare `@git:rebase` / `@git:soft` prompt for N.
+`@git:rebase15` / `@git:soft3` / `@git:log30` embed N in the id; space form (`@git:log 30`) also works. Bare `@git:rebase` / `@git:soft` prompt for N; bare `@git:log` defaults to 15.
 
 Always `ui.shell_pane_for` for cwd. Force git color off for AI-pane readability.
 
@@ -236,9 +237,10 @@ Bare `@kube:id` with trailing text that is **not** only an action run may attach
 #### Catalog kinds
 
 - Show: `ctx`, `ns`, `nodes`, `pods`, `pods-all`, `all`, `deploy`, `sts`, `svc`, `ing`, `cm`, `secrets` (names only), `pvc`, `events`, `top-nodes`, `top-pods`, `api-resources`, `can-i`.
-- Shell: `describe`, `logs`, `logs-f`, `logs-deploy`, `exec`, `pf`, `pf-svc`, `rollout`, `restart`, `scale`, `wait`, `diff`, `apply`, `delete-f`, `get-yaml`, `use-ns`.
+- Shell: `describe`, `logsN` / `logs-fN` / `logs-deployN` (`--tail=N`; defaults 200 / 100 / 200), `exec`, `pf`, `pf-svc`, `rollout`, `restart`, `scale`, `wait`, `diff`, `apply`, `delete-f`, `get-yaml`, `use-ns`.
 - AI (careful): `diagnose`, `explain-sel`, `not-ready` — gather read-only kubectl output; steer toward get/describe/logs; honor ns extra when present.
 - Mutate confirms when `kube.confirm_mutate` (default true). Empty successful gets print a clear “(no resources…)” line instead of a blank body.
+- Logs count: `@kube:logs500`, `@kube:logs-f50`, `@kube:logs 500` (numeric-only extra = tail). Do **not** use `:N` — colon/slash extras are namespace overrides.
 
 #### Ask attach tokens
 
