@@ -402,22 +402,72 @@ add_action({
     end,
 })
 
--- Shell shortcuts
+-- Parse embedded count from ids like rebase15 / soft3 → base id + number.
+local function split_count_id(id)
+    local base, num = (id or ""):match("^(rebase)(%d+)$")
+    if not base then
+        base, num = (id or ""):match("^(soft)(%d+)$")
+    end
+    if base and num then
+        return base, tonumber(num)
+    end
+    return id, nil
+end
+
+local function positive_count(raw)
+    local n = tonumber(raw)
+    if n and n == math.floor(n) and n >= 1 then
+        return n
+    end
+    return nil
+end
+
+-- Shell shortcuts — @git:rebase15 / @git:soft3 (any positive N); bare @git:rebase / @git:soft prompts.
 add_action({
-    id = "rebase3",
-    label = "rebase3 — rebase -i HEAD~3",
+    id = "rebase",
+    label = "rebaseN — rebase -i HEAD~N (e.g. rebase15)",
     kind = "shell",
     run = function(ctx)
-        run_in_shell(ctx.window, ctx.pane, ctx.ai_pane, ctx.config, "git rebase -i HEAD~3", { confirm = true })
+        local function go(win, p, n)
+            local ap = ui.ensure_ai_pane(win, p, ctx.config)
+            if not n then
+                ui.ai_print(ap, "Need a positive integer (e.g. @git:rebase15).", "error")
+                return
+            end
+            run_in_shell(win, p, ap, ctx.config, "git rebase -i HEAD~" .. n, { confirm = true })
+        end
+        local n = positive_count(ctx.extra)
+        if n then
+            go(ctx.window, ctx.pane, n)
+            return
+        end
+        prompt_line(ctx.window, ctx.pane, "Rebase how many commits? (e.g. 15)", function(win, p, line)
+            go(win, p, positive_count(line))
+        end)
     end,
 })
 
 add_action({
-    id = "soft1",
-    label = "soft1 — reset --soft HEAD~1",
+    id = "soft",
+    label = "softN — reset --soft HEAD~N (e.g. soft1)",
     kind = "shell",
     run = function(ctx)
-        run_in_shell(ctx.window, ctx.pane, ctx.ai_pane, ctx.config, "git reset --soft HEAD~1", { confirm = true })
+        local function go(win, p, n)
+            local ap = ui.ensure_ai_pane(win, p, ctx.config)
+            if not n then
+                ui.ai_print(ap, "Need a positive integer (e.g. @git:soft1).", "error")
+                return
+            end
+            run_in_shell(win, p, ap, ctx.config, "git reset --soft HEAD~" .. n, { confirm = true })
+        end
+        local n = positive_count(ctx.extra)
+        if n then
+            go(ctx.window, ctx.pane, n)
+            return
+        end
+        prompt_line(ctx.window, ctx.pane, "Soft-reset how many commits? (e.g. 1)", function(win, p, line)
+            go(win, p, positive_count(line))
+        end)
     end,
 })
 
@@ -902,11 +952,20 @@ function M.list_actions()
 end
 
 function M.get_action(id)
-    return ACTIONS[id]
+    local a = ACTIONS[id]
+    if a then
+        return a
+    end
+    local base = select(1, split_count_id(id))
+    if base ~= id then
+        return ACTIONS[base]
+    end
+    return nil
 end
 
 -- Parse ask-line for git intercept.
 -- Returns nil (not git), or { mode="picker"|"run"|"attach", id?, extra? }
+-- @git:rebase15 / @git:soft3 embed N; @git:rebase 15 / @git:soft 3 also work.
 function M.parse_line(line)
     local token = trim(line or "")
     if token == "@git" or token == "@git:" then
@@ -916,11 +975,16 @@ function M.parse_line(line)
     if not id then
         return nil
     end
+    local embedded_n
+    id, embedded_n = split_count_id(id)
     local action = ACTIONS[id]
     if not action then
         return nil
     end
     rest = trim(rest)
+    if rest == "" and embedded_n then
+        rest = tostring(embedded_n)
+    end
     if rest == "" then
         return { mode = "run", id = action.id }
     end
@@ -942,6 +1006,11 @@ function M.run_action(window, pane, config, id, extra)
     if not cwd then
         ui.ai_print(ai_pane, err, "error")
         return
+    end
+    local embedded_n
+    id, embedded_n = split_count_id(id)
+    if (not extra or trim(extra) == "") and embedded_n then
+        extra = tostring(embedded_n)
     end
     local action = ACTIONS[id]
     if not action then
