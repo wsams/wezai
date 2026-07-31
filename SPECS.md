@@ -28,13 +28,19 @@ Brand string in UI/logs: **`wezai`**. Never introduce third-party product brandi
 ## 2. Install & load
 
 ```lua
+-- Published:
 local wezai = wezterm.plugin.require("https://github.com/wsams/wezai")
+-- Local checkout (preferred while developing — avoids update_all clobbering unreleased fixes):
 -- local wezai = wezterm.plugin.require("/absolute/path/to/wezai")
 
 wezai.apply_to_config(config, { --[[ user options ]] })
+
+-- Optional: pull remote into the plugin cache. Do **not** leave this on every reload
+-- while iterating on a local checkout — it overwrites the cached copy from GitHub.
+-- wezterm.plugin.update_all()
 ```
 
-WezTerm clones plugins into its cache. After local edits: sync into the cache **or** `wezterm.plugin.update_all()` then reload config.
+WezTerm stores plugins under its plugin cache (encoded URLs / paths). After editing a **GitHub-required** install: sync the working tree into that cache dir **or** run `update_all()` once, then reload config. For day-to-day Lua work, `plugin.require("/absolute/path/…")` and skip `update_all()`.
 
 Public entrypoint: `plugin/init.lua` → `apply_to_config(wezterm_config, user_config)`.
 
@@ -46,7 +52,7 @@ Public entrypoint: `plugin/init.lua` → `apply_to_config(wezterm_config, user_c
 plugin/
   init.lua          -- bootstrap, keybindings, ask/edit orchestration, palette hooks
   settings.lua      -- defaults + merge (nested tables: ai_pane, history, git, kube, stats, files)
-  util.lua          -- paths, files, JSON parse helpers, truncation, smart large-file read
+  util.lua          -- paths, files, JSON parse, run_cmd (pcall), resolve_executable, large-file read
   ui.lua            -- AI pane lifecycle, styling, InputSelector, usage banner
   session.lua       -- per-tab chat memory + history events + last edit
   shell.lua         -- shell detect, OS platform hint, risk gate, clipboard, send_command
@@ -133,6 +139,12 @@ Command labels print as `(fish/macos)` style when showing suggested commands.
 - Edit apply and kube mutate actions confirm unless config disables confirms.
 - Kube AI helpers must prefer **read-only** next steps (get/describe/logs); never bake org-specific cluster/namespace names into the catalog.
 
+### 4.7 Child processes & Lua returns
+
+- `util.run_cmd(args)` wraps `wezterm.run_child_process` in `pcall` and always returns `ok, stdout, stderr` (never throws).
+- `util.resolve_executable(name, opts)` finds tools despite a thin GUI PATH (absolute candidates + login shell).
+- APIs that return `(value, err)` must use **`err = nil` on success**. Do not use `ok and nil or stderr` when `stderr` may be `""` — empty string is truthy in Lua and will be treated as failure by callers.
+
 ---
 
 ## 5. Features
@@ -150,7 +162,7 @@ Supports:
 | `@` / `@pick` / `@@` / `@@pick` | Fuzzy file picker (`files.lua`) |
 | `@clipboard` / `@selection` | Clipboard / selection |
 | `@git` / `@git:id` | Git picker or action (see §5.4) |
-| `@kube` / `@kube:id` | Kube picker or action (see §5.5) |
+| `@kube` / `@kube:id` / `@kube:pods/<ns>` | Kube picker, action, or attach with optional ns (see §5.5) |
 | `@history` / bare history ref | History palette / attach |
 | `@dir:path` | Shallow directory listing |
 
@@ -195,14 +207,41 @@ Always `ui.shell_pane_for` for cwd. Force git color off for AI-pane readability.
 
 Placeholders only (`<namespace>`, `<pod>`, `<name>`, `<file>`, …) — **no** org-specific names.
 
+#### Cluster / binary / namespace
+
 - **Cluster selection is outside wezai.** Catalog commands never pass `--kubeconfig`; they use the user’s current `kubectl` context / `KUBECONFIG`. Document one example in GUIDE only; do not clutter action templates with kubeconfig flags.
-- **Binary resolution:** Show/AI use `wezterm.run_child_process` (GUI PATH). Resolve via `config.kube.kubectl` or `util.resolve_executable` (common brew/Docker paths + login shell). Shell-kind actions still insert bare `kubectl` into the user’s shell.
-- Namespace: action extra (`@kube:pods kube-system` / `@kube:pods/ns` / `-A`) → `config.kube.namespace` → kubectl current-context namespace.
+- **Binary resolution:** Show/AI/attach call `wezterm.run_child_process` from the GUI process (Dock/Spotlight PATH is often incomplete). Resolve via `config.kube.kubectl` or `util.resolve_executable` (Homebrew/Docker/asdf/mise candidates + `zsh`/`bash -lc 'command -v …'`). Cache the absolute path in-module. Shell-kind actions still **insert** bare `kubectl …` into the user’s shell (their PATH/KUBECONFIG apply).
+- **`util.run_cmd`:** always `pcall`s `run_child_process` — missing binaries become `ok=false` + error string, never throw into the palette.
+- **Namespace resolution** (`resolve_namespace`): action/attach extra → `config.kube.namespace` → kubectl current-context namespace. Extra may be a ns name, or `-A` / `--all-namespaces`.
+
+#### Invocation forms
+
+| Form | Meaning |
+|------|---------|
+| `@kube` / `@kube:` | Open kube palette |
+| `@kube:pods` | Show pods in resolved namespace |
+| `@kube:pods kube-system` | One-shot ns override (Ask bare action / `parse_line` extra) |
+| `@kube:pods/kube-system` or `@kube:pods:kube-system` | Same override (inline `/` or `:`) |
+| `@kube:pods -A` | All namespaces (`-A` on the get) |
+| `@kube:pods-all` | Explicit all-ns pods action |
+| `@kube:use-ns` / `@kube:use-ns myns` | Prompt or set current-context namespace |
+
+Bare `@kube:id` with trailing text that is **not** only an action run may attach + ask when routed through Ask/`prepare_request` synthetics (same idea as `@git:status …`).
+
+#### Catalog kinds
+
 - Show: `ctx`, `ns`, `nodes`, `pods`, `pods-all`, `all`, `deploy`, `sts`, `svc`, `ing`, `cm`, `secrets` (names only), `pvc`, `events`, `top-nodes`, `top-pods`, `api-resources`, `can-i`.
 - Shell: `describe`, `logs`, `logs-f`, `logs-deploy`, `exec`, `pf`, `pf-svc`, `rollout`, `restart`, `scale`, `wait`, `diff`, `apply`, `delete-f`, `get-yaml`, `use-ns`.
-- AI (careful): `diagnose`, `explain-sel`, `not-ready` — gather read-only kubectl output; steer toward get/describe/logs.
-- Mutate confirms when `kube.confirm_mutate` (default true).
-- Ask attach tokens: `@kube:pods`, `@kube:events`, `@kube:all`, `@kube:nodes`, `@kube:ctx`.
+- AI (careful): `diagnose`, `explain-sel`, `not-ready` — gather read-only kubectl output; steer toward get/describe/logs; honor ns extra when present.
+- Mutate confirms when `kube.confirm_mutate` (default true). Empty successful gets print a clear “(no resources…)” line instead of a blank body.
+
+#### Ask attach tokens
+
+Supported synthetics (optional ns via `/` or `:`):
+
+- `@kube:pods`, `@kube:pods/kube-system`, `@kube:events`, `@kube:events/-A`, `@kube:all`, `@kube:nodes`, `@kube:ctx`
+
+`collect_attach` splits `pods/<ns>` with a plain `/` or `:` cut (not a fragile pattern). **Return contract:** `(content, err)` where success is `err == nil` — never return `""` as `err`. In Lua only `nil`/`false` are falsy; empty stderr used to look like failure (`failed:` with no message). `context.lua` also treats `err == ""` as success for defense in depth.
 
 ### 5.6 Stats / usage
 
@@ -246,7 +285,9 @@ Important fields (see `settings.lua` for full defaults):
 | `ai_pane.*` | Split direction/size/pad |
 | `backup_suffix` | Default `.wezai.bak` |
 | `require_edit_confirm`, `require_risk_confirm` | Safety toggles |
-| `kube.namespace`, `kube.kubectl`, `kube.confirm_mutate` | kubectl defaults / binary path |
+| `kube.namespace`, `kube.kubectl`, `kube.confirm_mutate`, `kube.max_attach_bytes` | kubectl defaults / binary / attach cap |
+| `git.default_branch`, `git.confirm_push`, `git.max_attach_bytes` | git catalog |
+| `history.*` | Shell/session history limits |
 | `stats.*` | Usage DB |
 | `rocks_bin` | Optional luarocks LUA_PATH (rarely needed) |
 
@@ -294,9 +335,10 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 2. Match existing Lua style (local modules, small helpers, `wezterm.log_*`).
 3. Do not add unnecessary markdown files; update README/GUIDE/SPECS when user-facing behavior changes.
 4. Prefer established tools (`fd`/`git`/`find`, system `diff -u`, `kubectl`) over reinvention.
-5. After editing plugin Lua for local WezTerm testing, sync into WezTerm’s plugin cache or run `wezterm.plugin.update_all()` and reload.
-6. Never commit secrets (API keys in `wezterm.lua` stay user-local).
-7. UI copy and logs say **wezai**, not other product names.
+5. Local WezTerm testing: prefer `plugin.require("/absolute/path/to/checkout")` and **do not** call `update_all()` on every reload. If using the GitHub require, sync the working tree into the matching cache dir then reload.
+6. Multi-return APIs that use an error slot must return **`nil` on success**, never `""` (Lua truthiness).
+7. Never commit secrets (API keys in `wezterm.lua` stay user-local).
+8. UI copy and logs say **wezai**, not other product names.
 
 ---
 
@@ -309,7 +351,10 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] Pick model / palette actions reuse **one** AI pane (no second split).
 - [ ] Fish dialect: no bogus `; end` on one-liners; macOS: no `du --exclude`.
 - [ ] `@git:status` prints in AI pane; mutating git confirms.
-- [ ] `@kube:pods` / `@kube:diagnose` work with current kubectl context; mutates confirm.
+- [ ] `@kube:pods` shows current ns (or “(no resources…)”); kubectl found even when WezTerm was Dock-launched.
+- [ ] `@kube:pods kube-system` / `@kube:pods/kube-system` override ns; `@kube:pods -A` lists all ns.
+- [ ] Ask `@kube:pods/kube-system what’s running?` attaches pods (no empty `failed:`).
+- [ ] `@kube:use-ns myns` / `@kube:diagnose`; mutates confirm.
 - [ ] Stats banner/line appears; `~/.local/share/wezai/stats.json` updates.
 - [ ] Git/kube/history always use shell cwd (not AI pane).
 
@@ -330,10 +375,12 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 |------|------------|
 | Ask / keys / orchestration | `plugin/init.lua` |
 | Defaults / merge | `plugin/settings.lua` |
-| `@` parsing / prepare | `plugin/context.lua` |
+| `@` parsing / prepare / attach errors | `plugin/context.lua` |
+| `run_cmd` / `resolve_executable` | `plugin/util.lua` |
 | Pane / UI | `plugin/ui.lua` |
 | Providers | `plugin/providers/` |
 | Git / Kube catalogs | `plugin/git.lua`, `plugin/kube.lua` |
+| Kube ns / kubectl bin / attach | `plugin/kube.lua` (`resolve_namespace`, `kubectl_bin`, `collect_attach`) |
 | Fuzzy files | `plugin/files.lua` |
 | Usage DB | `plugin/stats.lua` |
 | User docs | `README.md`, `GUIDE.md` |
