@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/wsams/wezai/compare/v1.0.0...v1.1.0) (2026-07-31)
+
+
+### Features
+
+* Add Renovate ([a964733](https://github.com/wsams/wezai/commit/a964733ba61b70db3c69ff0ac8bef6f13313904f))
+
 # 1.0.0 (2026-07-31)
 
 
