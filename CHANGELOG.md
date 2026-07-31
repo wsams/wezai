@@ -1,3 +1,10 @@
+## [1.3.2](https://github.com/wsams/wezai/compare/v1.3.1...v1.3.2) (2026-07-31)
+
+
+### Bug Fixes
+
+* kube pods ([04272c3](https://github.com/wsams/wezai/commit/04272c38284c7bef5740af638e3729c7d9e15035))
+
 ## [1.3.1](https://github.com/wsams/wezai/compare/v1.3.0...v1.3.1) (2026-07-31)
 
 
