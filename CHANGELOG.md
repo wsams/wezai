@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/wsams/wezai/compare/v1.1.0...v1.2.0) (2026-07-31)
+
+
+### Features
+
+* Token stats! ([68e9370](https://github.com/wsams/wezai/commit/68e937078ff2306a955afe820a4ac1d3697964a9))
+
 # [1.1.0](https://github.com/wsams/wezai/compare/v1.0.0...v1.1.0) (2026-07-31)
 
 
