@@ -1,3 +1,10 @@
+## [1.3.3](https://github.com/wsams/wezai/compare/v1.3.2...v1.3.3) (2026-07-31)
+
+
+### Bug Fixes
+
+* kube pods ask context ([81b94c9](https://github.com/wsams/wezai/commit/81b94c910c32864846d426bf5b9bcdf73bcd624a))
+
 ## [1.3.2](https://github.com/wsams/wezai/compare/v1.3.1...v1.3.2) (2026-07-31)
 
 
