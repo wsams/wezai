@@ -138,8 +138,13 @@ function M.collect_diff(cwd, max_bytes)
     return cap(table.concat(parts, "\n\n"), max_bytes), nil
 end
 
-function M.collect_log(cwd)
-    local ok, stdout, stderr = M.git_cmd(cwd, { "log", "--oneline", "-15" })
+function M.collect_log(cwd, n)
+    n = tonumber(n) or 15
+    if n < 1 then
+        n = 15
+    end
+    n = math.floor(n)
+    local ok, stdout, stderr = M.git_cmd(cwd, { "log", "--oneline", "-" .. tostring(n) })
     if not ok then
         return nil, stderr ~= "" and stderr or stdout
     end
@@ -200,12 +205,20 @@ function M.collect_attach(cwd, syn, config)
     local opts = git_opts(config)
     local max_bytes = opts.max_attach_bytes
     local id = syn:match("^git:(.+)$") or syn
+    local log_n
+    id, log_n = (function(raw)
+        local base, num = (raw or ""):match("^(log)(%d+)$")
+        if base then
+            return base, tonumber(num)
+        end
+        return raw, nil
+    end)(id)
     if id == "status" then
         return M.collect_status(cwd)
     elseif id == "diff" then
         return M.collect_diff(cwd, max_bytes)
     elseif id == "log" then
-        return M.collect_log(cwd)
+        return M.collect_log(cwd, log_n)
     elseif id == "branch" then
         return M.collect_branch(cwd)
     elseif id == "stash" then
@@ -281,6 +294,29 @@ local function ask_ai(window, pane, config, prompt, user_text)
     end
 end
 
+-- Parse embedded count from ids like rebase15 / soft3 / log30 → base id + number.
+local function split_count_id(id)
+    local base, num = (id or ""):match("^(rebase)(%d+)$")
+    if not base then
+        base, num = (id or ""):match("^(soft)(%d+)$")
+    end
+    if not base then
+        base, num = (id or ""):match("^(log)(%d+)$")
+    end
+    if base and num then
+        return base, tonumber(num)
+    end
+    return id, nil
+end
+
+local function positive_count(raw)
+    local n = tonumber(raw)
+    if n and n == math.floor(n) and n >= 1 then
+        return n
+    end
+    return nil
+end
+
 -- --- Actions ---
 
 local ACTIONS = {}
@@ -329,16 +365,17 @@ add_action({
 
 add_action({
     id = "log",
-    label = "log — last 15 commits",
+    label = "logN — last N commits (default 15, e.g. log30)",
     kind = "show",
     attach = true,
     run = function(ctx)
-        local body, err = M.collect_log(ctx.cwd)
+        local n = positive_count(ctx.extra) or 15
+        local body, err = M.collect_log(ctx.cwd, n)
         if err then
             ui.ai_print(ctx.ai_pane, err, "error")
             return
         end
-        print_show(ctx.ai_pane, "@git:log", body)
+        print_show(ctx.ai_pane, "@git:log" .. (n ~= 15 and tostring(n) or ""), body)
     end,
 })
 
@@ -401,26 +438,6 @@ add_action({
         print_show(ctx.ai_pane, "@git:whoami", body)
     end,
 })
-
--- Parse embedded count from ids like rebase15 / soft3 → base id + number.
-local function split_count_id(id)
-    local base, num = (id or ""):match("^(rebase)(%d+)$")
-    if not base then
-        base, num = (id or ""):match("^(soft)(%d+)$")
-    end
-    if base and num then
-        return base, tonumber(num)
-    end
-    return id, nil
-end
-
-local function positive_count(raw)
-    local n = tonumber(raw)
-    if n and n == math.floor(n) and n >= 1 then
-        return n
-    end
-    return nil
-end
 
 -- Shell shortcuts — @git:rebase15 / @git:soft3 (any positive N); bare @git:rebase / @git:soft prompts.
 add_action({
@@ -965,7 +982,7 @@ end
 
 -- Parse ask-line for git intercept.
 -- Returns nil (not git), or { mode="picker"|"run"|"attach", id?, extra? }
--- @git:rebase15 / @git:soft3 embed N; @git:rebase 15 / @git:soft 3 also work.
+-- @git:rebase15 / @git:soft3 / @git:log30 embed N; space form also works for those.
 function M.parse_line(line)
     local token = trim(line or "")
     if token == "@git" or token == "@git:" then
@@ -989,6 +1006,10 @@ function M.parse_line(line)
         return { mode = "run", id = action.id }
     end
     if action.kind == "ai" then
+        return { mode = "run", id = action.id, extra = rest }
+    end
+    -- Count-taking show actions: trailing integer is N, not an ask prompt.
+    if (action.id == "log" or action.id == "rebase" or action.id == "soft") and positive_count(rest) then
         return { mode = "run", id = action.id, extra = rest }
     end
     if action.attach or action.kind == "show" then
