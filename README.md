@@ -2,6 +2,8 @@
 
 **wezai** is a WezTerm plugin that puts an AI assistant, a command palette, and git/history shortcuts next to your shell — without leaving the terminal.
 
+> **Alpha software.** wezai is in active development and under heavy testing. Behavior and APIs may change. If you hit a bug or have an idea, please [open an issue](https://github.com/wsams/wezai/issues) — reports are welcome and help shape the project. See [CONTRIBUTING.md](CONTRIBUTING.md) for what to include.
+
 - Ask questions with file, clipboard, git, and selection context  
 - Edit files in one pass (`@@path`) with a diff confirm  
 - One palette (`CTRL+SHIFT+P`) for Ask helpers, `@git:…`, and `@history`  
