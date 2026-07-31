@@ -1,3 +1,10 @@
+## [1.2.3](https://github.com/wsams/wezai/compare/v1.2.2...v1.2.3) (2026-07-31)
+
+
+### Bug Fixes
+
+* panes ([76e3a99](https://github.com/wsams/wezai/commit/76e3a992e321deb3ed47bf38836f8da82e80a53d))
+
 ## [1.2.2](https://github.com/wsams/wezai/compare/v1.2.1...v1.2.2) (2026-07-31)
 
 
