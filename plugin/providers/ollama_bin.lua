@@ -32,7 +32,8 @@ function B.ask(cfg, user_text)
     if stdout == "" then
         return false, nil, "ollama produced empty stdout"
     end
-    return true, stdout, nil
+    -- CLI usually returns only the model JSON body (no usage envelope).
+    return true, stdout, nil, { model = model }
 end
 
 function B.ready(cfg)

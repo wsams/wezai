@@ -5,7 +5,7 @@ local action = wezterm.action
 do
     local slash = (package.config:sub(1, 1) == "\\") and "\\" or "/"
     local function looks_like_wezai(dir)
-        for _, name in ipairs({ "settings.lua", "providers/init.lua", "palette.lua" }) do
+        for _, name in ipairs({ "settings.lua", "stats.lua", "providers/init.lua", "palette.lua" }) do
             local fh = io.open(dir .. name, "r")
             if not fh then
                 return false
@@ -58,6 +58,15 @@ local git = require("git")
 local palette = require("palette")
 local providers = require("providers")
 local settings = require("settings")
+local stats = require("stats")
+
+local function note_usage(ai_pane, config, meta)
+    if not meta or (config.stats and config.stats.enabled == false) then
+        return
+    end
+    local db = stats.record(config, meta)
+    ui.ai_print(ai_pane, stats.format_turn(meta, db), "status")
+end
 
 local function parse_ai_response(response)
     local json, err = util.parse_json_response(response)
@@ -120,7 +129,7 @@ local function handle_ai_request(window, shell_pane, prompt, config, opts)
 
     ui.begin_turn(ai_pane, os.date("%H:%M:%S") .. "  ask")
     local progress = ui.start_progress(ai_pane, config)
-    local success, stdout, err = providers.ask(req_config, prompt)
+    local success, stdout, err, meta = providers.ask(req_config, prompt)
     progress.stop()
     wezterm.log_info("wezai: ask finished ok=", success)
 
@@ -128,6 +137,8 @@ local function handle_ai_request(window, shell_pane, prompt, config, opts)
         ui.ai_print(ai_pane, "AI request failed" .. (err and (": " .. err) or ""), "error")
         return
     end
+
+    note_usage(ai_pane, config, meta)
 
     local response = parse_ai_response(stdout)
     if response.message and response.message ~= "" then
@@ -170,13 +181,15 @@ local function handle_edit_request(window, shell_pane, request, config)
     edit_config.system_prompt = context.EDIT_SYSTEM_PROMPT
     edit_config._share_pane_history = false
 
-    local success, stdout, err = providers.ask(edit_config, prompt)
+    local success, stdout, err, meta = providers.ask(edit_config, prompt)
     progress.stop()
 
     if not success then
         ui.ai_print(ai_pane, "AI edit failed" .. (err and (": " .. err) or ""), "error")
         return
     end
+
+    note_usage(ai_pane, config, meta)
 
     local response, parse_err = util.parse_json_response(stdout)
     if not response then

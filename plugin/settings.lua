@@ -42,9 +42,11 @@ local BASE = {
     chat_max_turns = 6,
     require_edit_confirm = true,
     require_risk_confirm = true,
+    -- Usage DB: ~/.local/share/wezai/stats.json (override with stats.path)
+    stats = { enabled = true, path = nil },
 }
 
-local NESTED = { ai_pane = true, history = true, git = true }
+local NESTED = { ai_pane = true, history = true, git = true, stats = true }
 
 local function deep_copy_table(t)
     local out = {}

@@ -135,6 +135,9 @@ wezai.apply_to_config(config, {
   require_risk_confirm = true,
   max_file_bytes = 100000,
   backup_suffix = ".wezai.bak",
+
+  -- Token/model usage (shown when the AI pane opens; persisted under ~/.local/share/wezai/stats.json)
+  stats = { enabled = true },
 })
 ```
 
@@ -155,6 +158,7 @@ plugin/
   shell.lua      -- dialect, risk gate, clipboard
   util.lua
   settings.lua   -- defaults + user merge
+  stats.lua      -- token/model usage DB
   providers/     -- chat_http, gemini_api, ollama_bin, lms_bin
 ```
 

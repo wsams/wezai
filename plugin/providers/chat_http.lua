@@ -60,7 +60,13 @@ function B.ask(cfg, user_text)
     if type(text) ~= "string" or text == "" then
         return false, nil, "no assistant content in response"
     end
-    return true, text, nil
+    local usage = data.usage or {}
+    local meta = {
+        model = (type(data.model) == "string" and data.model ~= "" and data.model) or cfg.model,
+        prompt_tokens = tonumber(usage.prompt_tokens),
+        completion_tokens = tonumber(usage.completion_tokens),
+    }
+    return true, text, nil, meta
 end
 
 function B.ready(cfg)

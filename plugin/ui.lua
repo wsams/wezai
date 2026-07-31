@@ -1,6 +1,7 @@
 local wezterm = require("wezterm")
 local act = wezterm.action
 local util = require("util")
+local stats = require("stats")
 
 local M = {}
 
@@ -377,6 +378,14 @@ local function spawn_ai_pane(window, shell_pane, config)
     return nil
 end
 
+function M.print_usage_banner(ai_pane, config)
+    if not ai_pane or (config and config.stats and config.stats.enabled == false) then
+        return
+    end
+    local db = stats.load(config)
+    M.ai_print(ai_pane, stats.format_compact(db), "status")
+end
+
 function M.ensure_ai_pane(window, from_pane, config)
     local opts = config.ai_pane or {}
     local tid = util.tab_id(window)
@@ -428,6 +437,7 @@ function M.ensure_ai_pane(window, from_pane, config)
             shell_pane:activate()
         end)
         wezterm.log_info("wezai: reattached existing AI pane")
+        M.print_usage_banner(existing, config)
         return existing
     end
 
@@ -437,6 +447,7 @@ function M.ensure_ai_pane(window, from_pane, config)
         pcall(function()
             shell_pane:activate()
         end)
+        M.print_usage_banner(created, config)
         return created
     end
 

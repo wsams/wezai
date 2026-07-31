@@ -92,7 +92,13 @@ function B.ask(cfg, user_text)
         wezterm.log_error("wezai/gemini: unexpected body " .. stdout:sub(1, 400))
         return false, nil, "gemini missing text part"
     end
-    return true, text, nil
+    local um = data.usageMetadata or {}
+    local meta = {
+        model = model,
+        prompt_tokens = tonumber(um.promptTokenCount),
+        completion_tokens = tonumber(um.candidatesTokenCount),
+    }
+    return true, text, nil, meta
 end
 
 function B.ready(cfg)

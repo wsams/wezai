@@ -35,7 +35,7 @@ function B.ask(cfg, user_text)
     if not ok then
         return false, nil, stderr ~= "" and stderr or "lms binary failed"
     end
-    return true, stdout, nil
+    return true, stdout, nil, { model = model }
 end
 
 function B.ready(cfg)
