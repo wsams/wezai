@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/wsams/wezai/compare/v1.3.0...v1.3.1) (2026-07-31)
+
+
+### Bug Fixes
+
+* kube commands ([5d16b5c](https://github.com/wsams/wezai/commit/5d16b5cd54a0b7c12bb1bc4def63124a4210b8eb))
+
 # [1.3.0](https://github.com/wsams/wezai/compare/v1.2.5...v1.3.0) (2026-07-31)
 
 
