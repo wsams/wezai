@@ -14,9 +14,10 @@ local BASE = {
     keybinding_palette = { key = "p", mods = "CTRL|SHIFT" },
     keybinding_history = { key = "h", mods = "CTRL|SHIFT" },
     keybinding_git = { key = "g", mods = "CTRL|SHIFT" },
-    system_prompt = "You are wezai, a concise CLI helper for the user's shell. "
-        .. "Prefer short answers. When a shell command helps, put a single copy-pasteable command "
-        .. "in the command field (chain with && / || when useful). Otherwise set command to null."
+    -- Shell dialect (fish/zsh/bash/…) is appended automatically per request.
+    system_prompt = "You are a concise terminal assistant. Provide direct commands or brief explanations. "
+        .. "Warn of dangerous commands. Avoid unnecessary verbosity. Prefer interactive commands that "
+        .. "require user verification before proceeding when possible."
         .. REPLY_CONTRACT,
     timeout = 30,
     show_loading = true,

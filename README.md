@@ -13,28 +13,45 @@ Full walkthroughs and every palette action: **[GUIDE.md](GUIDE.md)**
 
 ## Install
 
-Clone (or use the GitHub URL after you publish), then load it in `~/.config/wezterm/wezterm.lua`:
+Load it from GitHub in `~/.config/wezterm/wezterm.lua`:
 
 ```lua
 local wezterm = require("wezterm")
 local config = wezterm.config_builder()
 
-local wezai = wezterm.plugin.require("/Users/you/path/to/wezai.wezterm")
--- After publish:
--- local wezai = wezterm.plugin.require("https://github.com/wsams/wezai.wezterm")
+local wezai = wezterm.plugin.require("https://github.com/wsams/wezai")
+-- Local checkout (development):
+-- local wezai = wezterm.plugin.require("/Users/you/path/to/wezai")
 
 wezai.apply_to_config(config, {
   type = "http",
   api_url = "https://your-endpoint/v1/chat/completions",
   api_key = "your-key",
   model = "your-model",
-  keybinding = { key = "i", mods = "CTRL" },
+
+  -- Ask prompt
+  keybinding = {
+    key = "i",
+    mods = "CTRL", -- CTRL+I (use "SUPER" for Cmd+I on macOS if you prefer)
+  },
+
+  -- Ask with shared pane scrollback as context
+  keybinding_with_pane = {
+    key = "e",
+    mods = "CTRL|SHIFT",
+  },
+
+  -- Optional style notes. Shell dialect (fish/zsh/bash/PowerShell) is detected from the
+  -- active pane (or $SHELL) and appended automatically — no need to hardcode Fish/zsh/etc.
+  system_prompt = "You are a concise terminal assistant. Provide direct commands or brief explanations. "
+    .. "Warn of dangerous commands. Avoid unnecessary verbosity. Prefer interactive commands that require "
+    .. "user verification before proceeding when possible.",
 })
 
 return config
 ```
 
-WezTerm caches plugin clones under its plugins directory. After local edits, copy/sync into that cache or `require` the local path and reload config.
+WezTerm clones plugins into its cache on first `require`. After you pull new commits (or edit a local checkout), run `wezterm.plugin.update_all()` once — from the debug overlay, or temporarily from your config — then reload WezTerm so the cache picks up the changes.
 
 ### Providers
 
@@ -51,7 +68,8 @@ WezTerm caches plugin clones under its plugins directory. After local edits, cop
 
 | Key | Action |
 |-----|--------|
-| `CTRL+I` (configurable) | **Ask** — type a question or `@` / `@@` ref |
+| `CTRL+I` | **Ask** — type a question or `@` / `@@` ref |
+| `CTRL+SHIFT+E` | **Ask** with pane scrollback attached as context |
 | `CTRL+SHIFT+P` | **Palette** — type `@git`, `@history`, or `Ask` to filter |
 | `CTRL+SHIFT+G` | Palette scoped to `@git` |
 | `CTRL+SHIFT+H` | Palette scoped to `@history` |
@@ -98,6 +116,11 @@ wezai.apply_to_config(config, {
   keybinding_palette = { key = "p", mods = "CTRL|SHIFT" },
   keybinding_history = { key = "h", mods = "CTRL|SHIFT" },
   keybinding_git = { key = "g", mods = "CTRL|SHIFT" },
+
+  -- Dialect (fish/zsh/bash/…) is auto-appended from the active shell pane / $SHELL.
+  system_prompt = "You are a concise terminal assistant. Provide direct commands or brief explanations. "
+    .. "Warn of dangerous commands. Avoid unnecessary verbosity. Prefer interactive commands that require "
+    .. "user verification before proceeding when possible.",
 
   ai_pane = { enabled = true, direction = "Right", size_percent = 35, pad_cols = 2 },
   history = {

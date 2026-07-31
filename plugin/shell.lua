@@ -50,57 +50,60 @@ local function classify_shell_name(name)
     return nil
 end
 
-function M.detect_shell(pane)
-    -- 1) Foreground process name
-    local ok, name = pcall(function()
-        return pane:get_foreground_process_name()
-    end)
-    if ok then
-        local kind = classify_shell_name(name)
-        if kind then
-            return kind
-        end
-    end
+--- Login/$SHELL fallback (no pane). Used at plugin load and when pane probe fails.
+function M.env_shell()
+    return classify_shell_name(os.getenv("SHELL")) or "unknown"
+end
 
-    -- 2) Process info (executable / argv) when available
-    local ok_info, info = pcall(function()
-        return pane:get_foreground_process_info()
-    end)
-    if ok_info and type(info) == "table" then
-        local kind = classify_shell_name(info.executable or info.name)
-        if kind then
-            return kind
+function M.detect_shell(pane)
+    if pane then
+        -- 1) Foreground process name
+        local ok, name = pcall(function()
+            return pane:get_foreground_process_name()
+        end)
+        if ok then
+            local kind = classify_shell_name(name)
+            if kind then
+                return kind
+            end
         end
-        if type(info.argv) == "table" then
-            for _, arg in ipairs(info.argv) do
-                kind = classify_shell_name(arg)
-                if kind then
-                    return kind
+
+        -- 2) Process info (executable / argv) when available
+        local ok_info, info = pcall(function()
+            return pane:get_foreground_process_info()
+        end)
+        if ok_info and type(info) == "table" then
+            local kind = classify_shell_name(info.executable or info.name)
+            if kind then
+                return kind
+            end
+            if type(info.argv) == "table" then
+                for _, arg in ipairs(info.argv) do
+                    kind = classify_shell_name(arg)
+                    if kind then
+                        return kind
+                    end
                 end
             end
         end
     end
 
-    -- 3) $SHELL from the environment WezTerm was started with
-    local kind = classify_shell_name(os.getenv("SHELL"))
-    if kind then
-        return kind
-    end
-
-    return "unknown"
+    return M.env_shell()
 end
 
-function M.dialect_hint(shell)
-    if shell == "fish" then
-        return "Shell dialect: fish. Prefer fish syntax (and/or, test, functions). Avoid bash-only [[ ]] and export FOO=bar; use set -x."
-    elseif shell == "zsh" then
-        return "Shell dialect: zsh. Prefer zsh/bash-compatible commands."
-    elseif shell == "bash" then
-        return "Shell dialect: bash. Prefer portable bash commands."
-    elseif shell == "powershell" then
-        return "Shell dialect: PowerShell. Prefer PowerShell cmdlets."
+--- Injected into system_prompt on every ask so commands match the active shell.
+function M.dialect_hint(kind)
+    if kind == "fish" then
+        return "ALWAYS provide commands in Fish shell format "
+            .. "(fish syntax: and/or, set -x, functions; avoid bash-only [[ ]], export FOO=bar)."
+    elseif kind == "zsh" then
+        return "ALWAYS provide commands in zsh format (zsh/bash-compatible is fine)."
+    elseif kind == "bash" then
+        return "ALWAYS provide commands in bash format (prefer portable bash)."
+    elseif kind == "powershell" then
+        return "ALWAYS provide commands in PowerShell format (prefer cmdlets)."
     end
-    return "Prefer portable POSIX shell commands when unsure of the shell."
+    return "Shell unknown — prefer portable POSIX commands."
 end
 
 function M.is_risky(command)

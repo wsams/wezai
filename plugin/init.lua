@@ -72,7 +72,7 @@ end
 local function with_dialect(config, pane)
     local c = util.copy_config(config)
     local dialect = shell.detect_shell(pane)
-    c.system_prompt = (c.system_prompt or "") .. " " .. shell.dialect_hint(dialect)
+    c.system_prompt = (c.system_prompt or "") .. "\n\n" .. shell.dialect_hint(dialect)
     return c, dialect
 end
 
@@ -90,6 +90,8 @@ local function handle_ai_request(window, shell_pane, prompt, config, opts)
         return
     end
 
+    -- Prefer the real shell pane (not the AI output pane) for cwd + dialect.
+    shell_pane = ui.shell_pane_for(window, shell_pane)
     local ai_pane = ui.ensure_ai_pane(window, shell_pane, config)
     local req_config, dialect = with_dialect(config, shell_pane)
 
@@ -547,10 +549,13 @@ local function apply_to_config(wezterm_config, user_config)
             .. config.model
             .. " type="
             .. config.type
+            .. " shell_fallback="
+            .. shell.env_shell()
             .. " palette="
             .. config.keybinding_palette.mods
             .. "+"
             .. config.keybinding_palette.key
+            .. " (dialect injected per ask from the active shell pane)"
     )
 end
 
