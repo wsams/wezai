@@ -1,3 +1,10 @@
+## [1.2.4](https://github.com/wsams/wezai/compare/v1.2.3...v1.2.4) (2026-07-31)
+
+
+### Bug Fixes
+
+* OS detection ([a7ba21e](https://github.com/wsams/wezai/commit/a7ba21e763e4f110fb7b8965a045a69f76d62335))
+
 ## [1.2.3](https://github.com/wsams/wezai/compare/v1.2.2...v1.2.3) (2026-07-31)
 
 
