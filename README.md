@@ -123,8 +123,8 @@ wezai.apply_to_config(config, {
   keybinding_git = { key = "g", mods = "CTRL|SHIFT" },
   keybinding_kube = { key = "k", mods = "CTRL|SHIFT" },
 
-  -- Optional default namespace (else kubectl current-context ns)
-  kube = { namespace = nil, confirm_mutate = true },
+  -- Optional: default ns + absolute kubectl if GUI PATH can't find it
+  kube = { namespace = nil, kubectl = nil, confirm_mutate = true },
 
   -- Dialect (fish/zsh/bash/…) is auto-appended from the active shell pane / $SHELL.
   system_prompt = "You are a concise terminal assistant. Provide direct commands or brief explanations. "

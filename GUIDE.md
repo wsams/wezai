@@ -195,6 +195,8 @@ Open via `CTRL+SHIFT+P` → `@kube`, or `CTRL+SHIFT+K`, or Ask → `@kube` / `@k
 
 Commands use whatever cluster **`kubectl` already points at** (current context). wezai never adds `--kubeconfig` to catalog commands — switch clusters yourself before running `@kube` actions.
 
+Show/AI actions run `kubectl` from WezTerm’s process (not your shell pane). If WezTerm was opened from Dock/Spotlight, its PATH may miss Homebrew/Docker — wezai resolves common install locations, or set `kube.kubectl = "/usr/local/bin/kubectl"` explicitly.
+
 Namespace defaults to the context’s namespace (override with `kube.namespace` in config). Placeholders like `<pod>` / `<file>` are prompted. **Mutating** actions (`apply`, `delete-f`, `restart`, `scale`) always confirm. AI helpers only gather read-only output (`get` / events) and steer toward safe next steps.
 
 **Switching clusters (you do this, not wezai):**

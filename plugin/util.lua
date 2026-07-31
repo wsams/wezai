@@ -325,9 +325,73 @@ function M.copy_config(config)
     return c
 end
 
+--- Run a child process. Never throws — missing binaries become ok=false.
 function M.run_cmd(args)
-    local ok, stdout, stderr = wezterm.run_child_process(args)
+    if type(args) ~= "table" or #args == 0 then
+        return false, "", "empty command"
+    end
+    local rok, ok, stdout, stderr = pcall(wezterm.run_child_process, args)
+    if not rok then
+        return false, "", tostring(ok)
+    end
     return ok == true, stdout or "", stderr or ""
+end
+
+local function path_is_executable(path)
+    if not path or path == "" then
+        return false
+    end
+    -- Prefer absolute probe so GUI PATH gaps don't matter.
+    local ok = M.run_cmd({ "test", "-x", path })
+    return ok
+end
+
+--- Resolve a CLI tool for WezTerm's GUI process (often a tiny PATH).
+--- opts.candidates: absolute paths to try first
+--- opts.login_shell: also ask zsh/bash -lc 'command -v name' (default true)
+function M.resolve_executable(name, opts)
+    opts = opts or {}
+    if not name or name == "" then
+        return nil
+    end
+    -- Already absolute / explicit
+    if name:sub(1, 1) == "/" or (WIN and name:match("^[A-Za-z]:[\\/]")) then
+        if path_is_executable(name) then
+            return name
+        end
+        return nil
+    end
+
+    for _, cand in ipairs(opts.candidates or {}) do
+        if path_is_executable(cand) then
+            return cand
+        end
+    end
+
+    -- Current GUI PATH (may work if WezTerm was started from a shell)
+    local ok, stdout = M.run_cmd({ "sh", "-c", "command -v " .. name })
+    if ok then
+        local p = trim(stdout)
+        if p ~= "" and path_is_executable(p) then
+            return p
+        end
+    end
+
+    if opts.login_shell ~= false then
+        for _, shell in ipairs({ "/bin/zsh", "/bin/bash" }) do
+            if path_is_executable(shell) then
+                local lok, lout = M.run_cmd({ shell, "-lc", "command -v " .. name })
+                if lok then
+                    local p = trim(lout)
+                    if p ~= "" and path_is_executable(p) then
+                        return p
+                    end
+                end
+            end
+        end
+    end
+
+    return nil
 end
 
 return M

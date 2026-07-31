@@ -44,6 +44,7 @@ local BASE = {
     },
     kube = {
         namespace = nil, -- nil → kubectl current context namespace
+        kubectl = nil, -- absolute path; nil → auto-resolve (GUI PATH is often incomplete)
         confirm_mutate = true,
         max_attach_bytes = 80000,
     },

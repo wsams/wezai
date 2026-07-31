@@ -21,6 +21,7 @@ local function kube_opts(config)
     local k = (config and config.kube) or {}
     return {
         namespace = k.namespace,
+        kubectl = k.kubectl,
         confirm_mutate = k.confirm_mutate ~= false,
         max_attach_bytes = k.max_attach_bytes or 80000,
     }
@@ -35,9 +36,41 @@ local function cap(text, max_bytes)
     return text:sub(1, max_bytes) .. "\n… (truncated)"
 end
 
+-- Cached absolute kubectl for WezTerm's process (Dock/Spotlight PATH often lacks brew/Docker).
+local _kubectl_resolved = nil
+
+local function home_dir()
+    return wezterm.home_dir or os.getenv("HOME") or ""
+end
+
+function M.kubectl_bin(config)
+    local override = kube_opts(config).kubectl
+    if override and override ~= "" then
+        return override
+    end
+    if _kubectl_resolved then
+        return _kubectl_resolved
+    end
+    local home = home_dir()
+    local found = util.resolve_executable("kubectl", {
+        candidates = {
+            "/opt/homebrew/bin/kubectl",
+            "/usr/local/bin/kubectl",
+            "/usr/bin/kubectl",
+            home .. "/.local/bin/kubectl",
+            home .. "/.asdf/shims/kubectl",
+            home .. "/.mise/shims/kubectl",
+            "/Applications/Docker.app/Contents/Resources/bin/kubectl",
+        },
+        login_shell = true,
+    })
+    _kubectl_resolved = found or "kubectl"
+    return _kubectl_resolved
+end
+
 local function kubectl(args, opts)
     opts = opts or {}
-    local cmd = { "kubectl" }
+    local cmd = { M.kubectl_bin(opts.config) }
     if opts.namespace and opts.namespace ~= "" and opts.namespace ~= "-" then
         table.insert(cmd, "-n")
         table.insert(cmd, opts.namespace)
@@ -54,7 +87,7 @@ function M.current_namespace(config)
         return opts.namespace
     end
     local ok, stdout = util.run_cmd({
-        "kubectl",
+        M.kubectl_bin(config),
         "config",
         "view",
         "--minify",
@@ -67,8 +100,8 @@ function M.current_namespace(config)
     return "default"
 end
 
-function M.current_context()
-    local ok, stdout = util.run_cmd({ "kubectl", "config", "current-context" })
+function M.current_context(config)
+    local ok, stdout = util.run_cmd({ M.kubectl_bin(config), "config", "current-context" })
     if ok then
         return trim(stdout)
     end
@@ -271,9 +304,9 @@ end
 
 local function show_cmd(ctx, title, args, use_ns)
     local ns = use_ns and M.current_namespace(ctx.config) or nil
-    local ok, stdout, stderr = kubectl(args, { namespace = ns })
+    local ok, stdout, stderr = kubectl(args, { namespace = ns, config = ctx.config })
     local body = ok and stdout or (stderr ~= "" and stderr or stdout)
-    local ctxname = M.current_context()
+    local ctxname = M.current_context(ctx.config)
     print_show(
         ctx.ai_pane,
         title .. "  (context=" .. ctxname .. (ns and (", ns=" .. ns) or "") .. ")",
@@ -311,9 +344,9 @@ add({
     label = "current context + namespace",
     aliases = { "context", "whoami" },
     run = function(ctx)
-        local ctxname = M.current_context()
+        local ctxname = M.current_context(ctx.config)
         local ns = M.current_namespace(ctx.config)
-        local ok, contexts = util.run_cmd({ "kubectl", "config", "get-contexts" })
+        local ok, contexts = util.run_cmd({ M.kubectl_bin(ctx.config), "config", "get-contexts" })
         local body = "current-context: "
             .. ctxname
             .. "\nnamespace: "
@@ -678,14 +711,15 @@ add({
     label = "AI: diagnose failing pods / events (read-only)",
     run = function(ctx)
         local ns = M.current_namespace(ctx.config)
-        local ok_p, pods = kubectl({ "get", "pods", "-o", "wide" }, { namespace = ns })
-        local ok_e, events = kubectl({ "get", "events", "--sort-by=.lastTimestamp" }, { namespace = ns })
+        local ok_p, pods = kubectl({ "get", "pods", "-o", "wide" }, { namespace = ns, config = ctx.config })
+        local ok_e, events =
+            kubectl({ "get", "events", "--sort-by=.lastTimestamp" }, { namespace = ns, config = ctx.config })
         local selection = util.get_selection(ctx.window, ctx.pane)
         local maxb = kube_opts(ctx.config).max_attach_bytes
         local blob = "Namespace: "
             .. ns
             .. "\nContext: "
-            .. M.current_context()
+            .. M.current_context(ctx.config)
             .. "\n\n=== pods ===\n"
             .. cap(ok_p and pods or "(failed to get pods)", maxb / 2)
             .. "\n\n=== events ===\n"
@@ -740,8 +774,8 @@ add({
             "--field-selector=status.phase!=Succeeded",
             "-o",
             "wide",
-        }, { namespace = ns })
-        local ok2, desc = kubectl({ "get", "pods" }, { namespace = ns })
+        }, { namespace = ns, config = ctx.config })
+        local ok2, desc = kubectl({ "get", "pods" }, { namespace = ns, config = ctx.config })
         local prompt = "Pods in namespace "
             .. ns
             .. " may be unhealthy. Identify which are not Ready and why. "
@@ -794,20 +828,21 @@ function M.collect_attach(syn, config)
     local id = syn:match("^kube:(.+)$") or syn
     local ns = M.current_namespace(config)
     local maxb = kube_opts(config).max_attach_bytes
+    local kopts = { namespace = ns, config = config }
     if id == "pods" then
-        local ok, stdout, stderr = kubectl({ "get", "pods", "-o", "wide" }, { namespace = ns })
+        local ok, stdout, stderr = kubectl({ "get", "pods", "-o", "wide" }, kopts)
         return ok and cap(stdout, maxb) or nil, ok and nil or (stderr or stdout)
     elseif id == "events" then
-        local ok, stdout, stderr = kubectl({ "get", "events", "--sort-by=.lastTimestamp" }, { namespace = ns })
+        local ok, stdout, stderr = kubectl({ "get", "events", "--sort-by=.lastTimestamp" }, kopts)
         return ok and cap(stdout, maxb) or nil, ok and nil or (stderr or stdout)
     elseif id == "all" then
-        local ok, stdout, stderr = kubectl({ "get", "all" }, { namespace = ns })
+        local ok, stdout, stderr = kubectl({ "get", "all" }, kopts)
         return ok and cap(stdout, maxb) or nil, ok and nil or (stderr or stdout)
     elseif id == "nodes" then
-        local ok, stdout, stderr = kubectl({ "get", "nodes", "-o", "wide" }, {})
+        local ok, stdout, stderr = kubectl({ "get", "nodes", "-o", "wide" }, { config = config })
         return ok and cap(stdout, maxb) or nil, ok and nil or (stderr or stdout)
     elseif id == "ctx" or id == "context" then
-        return "context=" .. M.current_context() .. " namespace=" .. ns, nil
+        return "context=" .. M.current_context(config) .. " namespace=" .. ns, nil
     end
     return nil, "unknown @kube attach: " .. tostring(syn)
 end
@@ -822,9 +857,18 @@ function M.run_action(window, pane, config, id, extra)
     end
     -- Quick connectivity check for show/ai
     if action.kind == "show" or action.kind == "ai" then
-        local ok, _, err = util.run_cmd({ "kubectl", "version", "--client", "--output=yaml" })
+        local bin = M.kubectl_bin(config)
+        local ok, _, err = util.run_cmd({ bin, "version", "--client", "--output=yaml" })
         if not ok then
-            ui.ai_print(ai_pane, "kubectl not available: " .. tostring(err), "error")
+            ui.ai_print(
+                ai_pane,
+                "kubectl not available ("
+                    .. tostring(bin)
+                    .. "): "
+                    .. tostring(err)
+                    .. "\nSet kube.kubectl = \"/absolute/path/to/kubectl\" in wezai config if needed.",
+                "error"
+            )
             return
         end
     end

@@ -196,6 +196,7 @@ Always `ui.shell_pane_for` for cwd. Force git color off for AI-pane readability.
 Placeholders only (`<namespace>`, `<pod>`, `<name>`, `<file>`, …) — **no** org-specific names.
 
 - **Cluster selection is outside wezai.** Catalog commands never pass `--kubeconfig`; they use the user’s current `kubectl` context / `KUBECONFIG`. Document one example in GUIDE only; do not clutter action templates with kubeconfig flags.
+- **Binary resolution:** Show/AI use `wezterm.run_child_process` (GUI PATH). Resolve via `config.kube.kubectl` or `util.resolve_executable` (common brew/Docker paths + login shell). Shell-kind actions still insert bare `kubectl` into the user’s shell.
 - Namespace: `config.kube.namespace` or kubectl current-context namespace.
 - Show: `ctx`, `ns`, `nodes`, `pods`, `pods-all`, `all`, `deploy`, `sts`, `svc`, `ing`, `cm`, `secrets` (names only), `pvc`, `events`, `top-nodes`, `top-pods`, `api-resources`, `can-i`.
 - Shell: `describe`, `logs`, `logs-f`, `logs-deploy`, `exec`, `pf`, `pf-svc`, `rollout`, `restart`, `scale`, `wait`, `diff`, `apply`, `delete-f`, `get-yaml`, `use-ns`.
@@ -245,7 +246,7 @@ Important fields (see `settings.lua` for full defaults):
 | `ai_pane.*` | Split direction/size/pad |
 | `backup_suffix` | Default `.wezai.bak` |
 | `require_edit_confirm`, `require_risk_confirm` | Safety toggles |
-| `kube.namespace`, `kube.confirm_mutate` | kubectl defaults |
+| `kube.namespace`, `kube.kubectl`, `kube.confirm_mutate` | kubectl defaults / binary path |
 | `stats.*` | Usage DB |
 | `rocks_bin` | Optional luarocks LUA_PATH (rarely needed) |
 
