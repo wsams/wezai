@@ -1,3 +1,4 @@
+local wezterm = require("wezterm")
 local util = require("util")
 local ui = require("ui")
 
@@ -89,6 +90,54 @@ function M.detect_shell(pane)
     end
 
     return M.env_shell()
+end
+
+--- Host OS for tool flags (BSD vs GNU, etc.).
+function M.detect_platform()
+    local triple = ""
+    if wezterm.target_triple then
+        triple = tostring(wezterm.target_triple):lower()
+    end
+    if triple:find("apple", 1, true) or triple:find("darwin", 1, true) then
+        return "macos"
+    end
+    if triple:find("windows", 1, true) or util.is_windows then
+        return "windows"
+    end
+    if triple:find("linux", 1, true) then
+        return "linux"
+    end
+    -- Fallback probe
+    local ok, stdout = util.run_cmd({ "uname", "-s" })
+    if ok and type(stdout) == "string" then
+        local u = stdout:lower()
+        if u:find("darwin", 1, true) then
+            return "macos"
+        end
+        if u:find("linux", 1, true) then
+            return "linux"
+        end
+    end
+    return "unknown"
+end
+
+--- Injected into system_prompt on every ask so commands match OS userland tools.
+function M.platform_hint(platform)
+    if platform == "macos" then
+        return table.concat({
+            "Host OS: macOS (BSD userland, NOT GNU/Linux).",
+            "Rules:",
+            "- Do NOT use GNU-only flags (examples: `du --exclude`, `ls --color=auto`, `sed -i` without backup suffix, `date -d`).",
+            "- For `du` excludes on macOS prefer `du -sh -I node_modules -I .git *` or find/fd pipelines; `du --exclude` does not exist.",
+            "- Prefer tools available by default on macOS (/usr/bin) or Homebrew when needed.",
+            "- Paths and flags must work on Darwin/BSD.",
+        }, " ")
+    elseif platform == "linux" then
+        return "Host OS: Linux (GNU userland is fine). Prefer portable commands when practical."
+    elseif platform == "windows" then
+        return "Host OS: Windows. Prefer PowerShell-friendly commands unless the active shell is clearly a UNIX shell."
+    end
+    return "Host OS unknown — avoid GNU-only and BSD-only exclusive flags; prefer portable POSIX."
 end
 
 --- Injected into system_prompt on every ask so commands match the active shell.

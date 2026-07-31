@@ -82,8 +82,13 @@ end
 local function with_dialect(config, pane)
     local c = util.copy_config(config)
     local dialect = shell.detect_shell(pane)
-    c.system_prompt = (c.system_prompt or "") .. "\n\n" .. shell.dialect_hint(dialect)
-    return c, dialect
+    local platform = shell.detect_platform()
+    c.system_prompt = (c.system_prompt or "")
+        .. "\n\n"
+        .. shell.dialect_hint(dialect)
+        .. "\n\n"
+        .. shell.platform_hint(platform)
+    return c, dialect, platform
 end
 
 local function prepend_history(window, prompt, config)
@@ -103,7 +108,7 @@ local function handle_ai_request(window, shell_pane, prompt, config, opts)
     -- Prefer the real shell pane (not the AI output pane) for cwd + dialect.
     shell_pane = ui.shell_pane_for(window, shell_pane)
     local ai_pane = ui.ensure_ai_pane(window, shell_pane, config)
-    local req_config, dialect = with_dialect(config, shell_pane)
+    local req_config, dialect, platform = with_dialect(config, shell_pane)
 
     if config._share_pane_history or opts.share_pane then
         local history
@@ -154,7 +159,7 @@ local function handle_ai_request(window, shell_pane, prompt, config, opts)
             { kind = "ai-cmd", text = response.command },
             (config.history and config.history.max_session) or 50
         )
-        ui.ai_print(ai_pane, "(" .. dialect .. ")\n" .. response.command, "command")
+        ui.ai_print(ai_pane, "(" .. dialect .. "/" .. platform .. ")\n" .. response.command, "command")
         shell.send_command(window, shell_pane, ai_pane, config, response.command)
     end
 end
@@ -722,11 +727,13 @@ local function apply_to_config(wezterm_config, user_config)
             .. config.type
             .. " shell_fallback="
             .. shell.env_shell()
+            .. " platform="
+            .. shell.detect_platform()
             .. " palette="
             .. config.keybinding_palette.mods
             .. "+"
             .. config.keybinding_palette.key
-            .. " (dialect injected per ask from the active shell pane)"
+            .. " (shell+OS hints injected per ask)"
     )
 end
 
