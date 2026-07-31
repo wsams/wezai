@@ -93,7 +93,7 @@ More examples: [GUIDE.md](GUIDE.md).
 |-------------------|---------|
 | `@file` | Attach a file (read-only). Trailing `?!.` etc. are ignored (`@package.json?` works) |
 | `@` / `@pick` | Fuzzy file picker (type to filter), then ask |
-| `@@file instruction` | Rewrite the file (diff + confirm) |
+| `@@file instruction` | Create or rewrite the file (diff + confirm). New files OK if the parent dir exists |
 | `@@` / `@@pick` | Fuzzy pick a file to edit, then type the instruction |
 | `@clipboard` / `@selection` | Clipboard or terminal selection |
 | `@git:status` + a question | Attach status and ask |

@@ -307,26 +307,23 @@ local function prompt_for_ai(window, pane, config, opts)
         local function run_prepared(req_line)
             local request, err = context.prepare_request(win, p, req_line, selection, config)
             if err then
+                -- Missing @attach paths → fuzzy pick. @@create is handled in context (new files OK).
                 if err:find("file not found", 1, true) then
                     local parsed = context.parse_at_refs(req_line)
-                    local mode = (#parsed.edit_paths > 0) and "edit" or "attach"
-                    local hint = err:match("([^/\\]+)$") or "file"
-                    files.show_picker(win, p, config, {
-                        mode = mode,
-                        title = "No exact match — fuzzy pick a file",
-                        fuzzy_description = "Filter (tried " .. hint .. "): ",
-                        on_chosen = function(w2, p2, rel)
-                            local rest = parsed.rest or ""
-                            local rebuilt
-                            if mode == "edit" then
-                                rebuilt = "@@" .. rel .. (rest ~= "" and (" " .. rest) or "")
-                            else
-                                rebuilt = "@" .. rel .. (rest ~= "" and (" " .. rest) or "")
-                            end
-                            process_ask_line(w2, p2, rebuilt)
-                        end,
-                    })
-                    return
+                    if #parsed.edit_paths == 0 then
+                        local hint = err:match("([^/\\]+)$") or "file"
+                        files.show_picker(win, p, config, {
+                            mode = "attach",
+                            title = "No exact match — fuzzy pick a file",
+                            fuzzy_description = "Filter (tried " .. hint .. "): ",
+                            on_chosen = function(w2, p2, rel)
+                                local rest = parsed.rest or ""
+                                local rebuilt = "@" .. rel .. (rest ~= "" and (" " .. rest) or "")
+                                process_ask_line(w2, p2, rebuilt)
+                            end,
+                        })
+                        return
+                    end
                 end
                 local ai_pane = ui.ensure_ai_pane(win, p, config)
                 ui.ai_print(ai_pane, "wezai: " .. err, "error")
@@ -471,10 +468,10 @@ local function pick_model(window, pane, config)
         local mark = (m == (config._model_override or config.model)) and " (current)" or ""
         table.insert(choices, { id = m, label = m .. mark })
     end
-    ui.input_select(window, pane, "Pick model for next AI requests", choices, function(_, _, id)
+    ui.input_select(window, pane, "Pick model for next AI requests", choices, function(win, p, id)
         if id then
             config._model_override = id
-            local ai_pane = ui.ensure_ai_pane(window, pane, config)
+            local ai_pane = ui.ensure_ai_pane(win, p, config)
             ui.ai_print(ai_pane, "Model set to: " .. id, "system")
         end
     end)

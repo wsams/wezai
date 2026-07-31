@@ -43,17 +43,18 @@ local KIND_STYLE = {
 }
 
 -- Portable keep-alive: macOS `sleep` does NOT accept "infinity".
+-- Marker string WEZAI_OUTPUT_PANE lets us re-detect the pane after the banner scrolls away.
 local function keep_alive_args(pad)
     local indent = string.rep(" ", pad or default_pad)
     if util.is_windows then
-        return { "cmd", "/c", "echo wezai output pane && ping -t localhost >NUL" }
+        return { "cmd", "/c", "echo wezai output pane WEZAI_OUTPUT_PANE && ping -t localhost >NUL" }
     end
     return {
         "sh",
         "-c",
         string.format(
             "printf '\\r\\n%s%swezai%s — output pane\\r\\n%s%sFollow up: CTRL+i%s · %sCTRL+SHIFT+P%s command palette\\r\\n%sType @git / @history in the palette to filter\\r\\n\\r\\n'; "
-                .. "while true; do sleep 86400; done",
+                .. "WEZAI_OUTPUT_PANE=1; while true; do sleep 86400; done",
             indent,
             BOLD .. CYAN,
             RESET,
@@ -96,20 +97,7 @@ local function pane_id(pane)
     return nil
 end
 
-local function looks_like_ai_pane(pane)
-    if not pane_usable(pane) then
-        return false
-    end
-    local ok, text = pcall(function()
-        return pane:get_logical_lines_as_text(12)
-    end)
-    if not ok or not text then
-        return false
-    end
-    return text:find("wezai", 1, true) ~= nil and text:find("output pane", 1, true) ~= nil
-end
-
-local function find_ai_pane_in_tab(window)
+local function tab_panes(window)
     local ok, tab = pcall(function()
         return window:active_tab()
     end)
@@ -122,12 +110,109 @@ local function find_ai_pane_in_tab(window)
     if not ok_list or type(list) ~= "table" then
         return nil
     end
+    return list
+end
+
+local function find_pane_by_id(window, want_id)
+    if want_id == nil then
+        return nil
+    end
+    local list = tab_panes(window)
+    if not list then
+        return nil
+    end
+    for _, p in ipairs(list) do
+        if pane_id(p) == want_id and pane_usable(p) then
+            return p
+        end
+    end
+    return nil
+end
+
+local function process_looks_like_ai(pane)
+    local ok_info, info = pcall(function()
+        return pane:get_foreground_process_info()
+    end)
+    if ok_info and type(info) == "table" then
+        local chunks = {}
+        if type(info.argv) == "table" then
+            for _, a in ipairs(info.argv) do
+                chunks[#chunks + 1] = tostring(a)
+            end
+        end
+        if info.executable then
+            chunks[#chunks + 1] = tostring(info.executable)
+        end
+        local blob = table.concat(chunks, " ")
+        if blob:find("WEZAI_OUTPUT_PANE", 1, true)
+            or (blob:find("wezai", 1, true) and blob:find("output pane", 1, true))
+            or (blob:find("sleep 86400", 1, true) and blob:find("while true", 1, true))
+        then
+            return true
+        end
+    end
+    local ok_name, name = pcall(function()
+        return pane:get_foreground_process_name()
+    end)
+    if ok_name and type(name) == "string" and name:lower():find("wezai", 1, true) then
+        return true
+    end
+    return false
+end
+
+local function looks_like_ai_pane(pane)
+    if not pane_usable(pane) then
+        return false
+    end
+    -- Process fingerprint survives long scrollback (banner may be gone).
+    if process_looks_like_ai(pane) then
+        return true
+    end
+    local ok, text = pcall(function()
+        return pane:get_logical_lines_as_text(80)
+    end)
+    if not ok or type(text) ~= "string" or text == "" then
+        return false
+    end
+    if not text:find("wezai", 1, true) then
+        return false
+    end
+    return text:find("output pane", 1, true)
+        or text:find("WEZAI_OUTPUT_PANE", 1, true)
+        or text:find("command palette", 1, true)
+        or text:find("CTRL+SHIFT+P", 1, true)
+        or text:find("usage  req", 1, true)
+        or text:find("▶ assistant", 1, true)
+        or text:find("▶ command", 1, true)
+end
+
+local function find_ai_pane_in_tab(window, prefer_id)
+    if prefer_id ~= nil then
+        local by_id = find_pane_by_id(window, prefer_id)
+        if by_id then
+            return by_id
+        end
+    end
+    local list = tab_panes(window)
+    if not list then
+        return nil
+    end
     for _, p in ipairs(list) do
         if looks_like_ai_pane(p) then
             return p
         end
     end
     return nil
+end
+
+local function remember_panes(tid, ai, shell, pad)
+    panes[tid] = {
+        ai = ai,
+        shell = shell,
+        pad = pad or default_pad,
+        ai_id = pane_id(ai),
+        shell_id = pane_id(shell),
+    }
 end
 
 -- Strip/replace invalid UTF-8 so InputSelector doesn't crash on history labels.
@@ -324,19 +409,29 @@ local function inject_raw(pane, text)
     return true
 end
 
+--- @return pane|nil, boolean is_new
 local function spawn_ai_pane(window, shell_pane, config)
+    -- Absolute last check — never split if an AI pane is already in this tab.
+    local already = find_ai_pane_in_tab(window)
+    if already then
+        wezterm.log_info("wezai: spawn skipped; reused existing AI pane id=", pane_id(already))
+        return already, false
+    end
+
     local opts = config.ai_pane or {}
     local direction = opts.direction or "Right"
     local pct = opts.size_percent or 35
     local size = pct / 100
     local pad = opts.pad_cols or default_pad
     local args = keep_alive_args(pad)
+    local env = { WEZAI_OUTPUT_PANE = "1" }
 
     local ok, new_pane_or_err = pcall(function()
         return shell_pane:split({
             direction = direction,
             size = size,
             args = args,
+            set_environment_variables = env,
         })
     end)
     if ok and new_pane_or_err then
@@ -344,7 +439,7 @@ local function spawn_ai_pane(window, shell_pane, config)
             shell_pane:activate()
         end)
         wezterm.log_info("wezai: created AI pane via pane:split id=", new_pane_or_err:pane_id())
-        return new_pane_or_err
+        return new_pane_or_err, true
     end
     if not ok then
         wezterm.log_warn("wezai: pane:split failed: ", tostring(new_pane_or_err))
@@ -356,14 +451,14 @@ local function spawn_ai_pane(window, shell_pane, config)
                 act.SplitPane({
                     direction = direction,
                     size = { Percent = pct },
-                    command = { args = args },
+                    command = { args = args, set_environment_variables = env },
                 }),
                 shell_pane
             )
         end)
         if not ok2 then
             wezterm.log_warn("wezai: SplitPane action failed: ", tostring(err2))
-            return nil
+            return nil, false
         end
         local ai = window:active_pane()
         if ai and ai:pane_id() ~= shell_pane:pane_id() then
@@ -371,11 +466,11 @@ local function spawn_ai_pane(window, shell_pane, config)
                 shell_pane:activate()
             end)
             wezterm.log_info("wezai: created AI pane via SplitPane action")
-            return ai
+            return ai, true
         end
         wezterm.log_warn("wezai: SplitPane ran but active pane unchanged")
     end
-    return nil
+    return nil, false
 end
 
 function M.print_usage_banner(ai_pane, config)
@@ -393,66 +488,70 @@ function M.ensure_ai_pane(window, from_pane, config)
     local shell_pane = M.shell_pane_for(window, from_pane)
 
     if opts.enabled == false then
-        panes[tid] = { ai = shell_pane, shell = shell_pane, pad = pad }
+        remember_panes(tid, shell_pane, shell_pane, pad)
         return shell_pane
     end
 
     local entry = panes[tid]
-    if entry and pane_usable(entry.ai) then
-        -- Never overwrite shell with the AI pane itself
-        if pane_usable(shell_pane) and pane_id(shell_pane) ~= pane_id(entry.ai) then
-            entry.shell = shell_pane
+    local cached_ai = nil
+    if entry then
+        if pane_usable(entry.ai) then
+            cached_ai = entry.ai
+        elseif entry.ai_id ~= nil then
+            cached_ai = find_pane_by_id(window, entry.ai_id)
         end
-        entry.pad = pad
-        pcall(function()
-            entry.shell:activate()
-        end)
-        return entry.ai
     end
 
-    -- After config reload, Lua state is empty but an AI pane may still exist in the tab
-    local existing = find_ai_pane_in_tab(window)
+    if cached_ai and pane_id(cached_ai) ~= pane_id(shell_pane) then
+        if pane_usable(shell_pane) and pane_id(shell_pane) ~= pane_id(cached_ai) then
+            -- keep shell
+        elseif entry and entry.shell_id then
+            local recovered = find_pane_by_id(window, entry.shell_id)
+            if recovered and pane_id(recovered) ~= pane_id(cached_ai) then
+                shell_pane = recovered
+            end
+        end
+        remember_panes(tid, cached_ai, shell_pane, pad)
+        pcall(function()
+            shell_pane:activate()
+        end)
+        return cached_ai
+    end
+
+    -- Reattach after reload / lost Lua state / banner scrolled away
+    local existing = find_ai_pane_in_tab(window, entry and entry.ai_id or nil)
     if existing and pane_usable(existing) then
         if not pane_usable(shell_pane) or pane_id(shell_pane) == pane_id(existing) then
-            -- Fall back to any other pane in the tab as shell
-            local ok, tab = pcall(function()
-                return window:active_tab()
-            end)
-            if ok and tab then
-                local ok_list, list = pcall(function()
-                    return tab:panes()
-                end)
-                if ok_list and list then
-                    for _, p in ipairs(list) do
-                        if pane_id(p) ~= pane_id(existing) and pane_usable(p) then
-                            shell_pane = p
-                            break
-                        end
-                    end
+            local list = tab_panes(window) or {}
+            for _, p in ipairs(list) do
+                if pane_id(p) ~= pane_id(existing) and pane_usable(p) and not looks_like_ai_pane(p) then
+                    shell_pane = p
+                    break
                 end
             end
         end
-        panes[tid] = { ai = existing, shell = shell_pane, pad = pad }
+        remember_panes(tid, existing, shell_pane, pad)
         pcall(function()
             shell_pane:activate()
         end)
-        wezterm.log_info("wezai: reattached existing AI pane")
-        M.print_usage_banner(existing, config)
+        wezterm.log_info("wezai: reattached existing AI pane id=", pane_id(existing))
         return existing
     end
 
-    local created = spawn_ai_pane(window, shell_pane, config)
+    local created, is_new = spawn_ai_pane(window, shell_pane, config)
     if created and pane_usable(created) then
-        panes[tid] = { ai = created, shell = shell_pane, pad = pad }
+        remember_panes(tid, created, shell_pane, pad)
         pcall(function()
             shell_pane:activate()
         end)
-        M.print_usage_banner(created, config)
+        if is_new then
+            M.print_usage_banner(created, config)
+        end
         return created
     end
 
     wezterm.log_warn("wezai: could not create AI pane; falling back to shell pane")
-    panes[tid] = { ai = shell_pane, shell = shell_pane, pad = pad }
+    remember_panes(tid, shell_pane, shell_pane, pad)
     return shell_pane
 end
 

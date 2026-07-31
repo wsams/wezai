@@ -12,16 +12,14 @@ function M.apply_file_edit(path, new_content, config)
     local suffix = config.backup_suffix or ".wezai.bak"
     local backup_path = path .. suffix
 
-    local src, err = io.open(path, "rb")
-    if not src then
-        return false, "cannot read original for backup: " .. (err or path), nil
-    end
-    local original = src:read("*a")
-    src:close()
-    if original == nil then
-        return false, "failed reading original for backup: " .. path, nil
+    local original = ""
+    local src = io.open(path, "rb")
+    if src then
+        original = src:read("*a") or ""
+        src:close()
     end
 
+    -- Always keep a backup (empty string for brand-new files) so undo can restore/clear.
     local bak_ok, bak_err = util.write_text_file(backup_path, original)
     if not bak_ok then
         return false, bak_err, nil
@@ -139,7 +137,8 @@ local function show_diff_then_confirm(window, shell_pane, ai_pane, config, path,
     local diff, old_n, new_n = M.unified_diff(path, original, new_content)
     local basename = path:match("([^/\\]+)$") or path
 
-    ui.ai_print(ai_pane, "Review diff for " .. basename, "warn")
+    local creating = (not original or original == "")
+    ui.ai_print(ai_pane, (creating and "Review new file " or "Review diff for ") .. basename, "warn")
     if message and message ~= "" then
         ui.ai_print(ai_pane, message, "message")
     end
@@ -162,7 +161,8 @@ local function show_diff_then_confirm(window, shell_pane, ai_pane, config, path,
             return
         end
         session.set_last_edit(window, path, backup)
-        ui.ai_print(ai_pane, "Saved: " .. path .. "\nbackup: " .. backup, "success")
+        local verb = creating and "Created" or "Saved"
+        ui.ai_print(ai_pane, verb .. ": " .. path .. "\nbackup: " .. backup, "success")
         callback(true)
     end
 
@@ -175,9 +175,15 @@ local function show_diff_then_confirm(window, shell_pane, ai_pane, config, path,
         ui.input_select(
             window,
             shell_pane,
-            "Diff is in the AI pane — Apply edit to " .. basename .. "?",
+            (creating and "Diff is in the AI pane — Create " or "Diff is in the AI pane — Apply edit to ")
+                .. basename
+                .. "?",
             {
-                { id = "apply", label = "Apply — write file (keeps .wezai.bak)" },
+                {
+                    id = "apply",
+                    label = creating and "Create — write new file (keeps .wezai.bak)"
+                        or "Apply — write file (keeps .wezai.bak)",
+                },
                 { id = "cancel", label = "Cancel — discard changes" },
             },
             function(_, _, id)

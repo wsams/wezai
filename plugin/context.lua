@@ -12,10 +12,12 @@ M.DEFAULT_FILE_INSTRUCTION =
         .. "and suggest how to fix it. Prefer a ready-to-run command when a fix is appropriate."
 
 M.EDIT_SYSTEM_PROMPT =
-    "You edit a single file in one pass. Apply the user's modification to the edit target. "
+    "You create or rewrite a single file in one pass. "
+        .. "If the target is empty / new, invent the full contents from the user's instruction. "
+        .. "If the target already has content, apply the modification to the whole file. "
         .. "Respond with JSON only (no markdown fences) with fields: "
         .. "message (brief summary of changes), "
-        .. "file (the COMPLETE revised file contents as a string, not a diff), "
+        .. "file (the COMPLETE file contents as a string, not a diff), "
         .. "command (null or empty string). "
         .. "Do not omit any part of the file."
 
@@ -213,6 +215,29 @@ local function resolve_and_read_files(raw_paths, cwd, max_bytes, seen)
     return files, errors, seen
 end
 
+--- Resolve @@ target: existing file, or create-new if the parent directory exists.
+local function resolve_edit_target(raw, cwd, max_bytes)
+    local abs = util.expand_path(raw, cwd)
+    if not abs then
+        return nil, "cannot resolve path (no pane cwd?): " .. tostring(raw)
+    end
+    if util.path_exists_as_dir(abs) then
+        return nil, "edit target is a directory: " .. abs
+    end
+    if util.path_exists_as_file(abs) then
+        local ok, content_or_err = util.read_text_file(abs, max_bytes)
+        if not ok then
+            return nil, content_or_err
+        end
+        return { path = abs, content = content_or_err, is_new = false }, nil
+    end
+    local parent = abs:match("^(.*)[/\\][^/\\]+$")
+    if parent and parent ~= "" and not util.path_exists_as_dir(parent) then
+        return nil, "cannot create file — parent directory missing: " .. parent
+    end
+    return { path = abs, content = "", is_new = true }, nil
+end
+
 local function list_dir_shallow(dir_path, max_entries)
     max_entries = max_entries or 200
     local ok, stdout = util.run_cmd({
@@ -332,15 +357,11 @@ function M.prepare_request(window, pane, line, selection, config)
             return nil, "edit instruction required after @@path (example: @@file.txt sort the lines)"
         end
 
-        local edit_files, edit_errors, seen_after = resolve_and_read_files(parsed.edit_paths, cwd, max_bytes, seen)
-        if #edit_errors > 0 then
-            return nil, table.concat(edit_errors, "; ")
+        local target, target_err = resolve_edit_target(parsed.edit_paths[1], cwd, max_bytes)
+        if not target then
+            return nil, target_err
         end
-        if #edit_files ~= 1 then
-            return nil, "edit target could not be loaded"
-        end
-        local target = edit_files[1]
-        seen = seen_after
+        seen[target.path] = true
 
         local context_files, ctx_errors
         context_files, ctx_errors, seen = resolve_and_read_files(parsed.paths, cwd, max_bytes, seen)
@@ -361,15 +382,26 @@ function M.prepare_request(window, pane, line, selection, config)
         end
 
         local parts = {}
-        table.insert(
-            parts,
-            "Edit target (rewrite this file completely in the JSON \"file\" field):\n"
-                .. "File: "
-                .. target.path
-                .. "\n```\n"
-                .. target.content
-                .. "\n```"
-        )
+        if target.is_new then
+            table.insert(
+                parts,
+                "Create target (file does not exist yet). Write the COMPLETE new file contents "
+                    .. "in the JSON \"file\" field:\n"
+                    .. "File: "
+                    .. target.path
+                    .. "\n```\n```"
+            )
+        else
+            table.insert(
+                parts,
+                "Edit target (rewrite this file completely in the JSON \"file\" field):\n"
+                    .. "File: "
+                    .. target.path
+                    .. "\n```\n"
+                    .. target.content
+                    .. "\n```"
+            )
+        end
         if #context_files > 0 then
             for _, f in ipairs(context_files) do
                 f.label = "Read-only context"
@@ -398,6 +430,7 @@ function M.prepare_request(window, pane, line, selection, config)
             files = all_files,
             target_path = target.path,
             original_content = target.content,
+            is_new = target.is_new == true,
             user_text = instruction,
             attach_labels = synth_labels,
         }, nil
