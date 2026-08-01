@@ -2,8 +2,23 @@ local wezterm = require("wezterm")
 local ui = require("ui")
 local git = require("git")
 local kube = require("kube")
-local tf = require("tf")
 local history = require("history")
+
+local tf
+do
+    local ok, mod = pcall(require, "tf")
+    if ok then
+        tf = mod
+    else
+        wezterm.log_warn("wezai: palette @tf disabled — " .. tostring(mod))
+        tf = {
+            list_actions = function()
+                return {}
+            end,
+            run_action = function() end,
+        }
+    end
+end
 
 local M = {}
 

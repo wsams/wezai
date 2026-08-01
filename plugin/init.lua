@@ -2,34 +2,78 @@ local wezterm = require("wezterm")
 local action = wezterm.action
 
 -- WezTerm has no debug.getinfo; discover our plugin/ dir by fingerprint.
+-- Prefer the most complete install (so a stale local checkout without tf.lua
+-- cannot win over an updated GitHub plugin cache).
 do
     local slash = (package.config:sub(1, 1) == "\\") and "\\" or "/"
+    local FINGERPRINT = {
+        "settings.lua",
+        "stats.lua",
+        "providers/init.lua",
+        "palette.lua",
+    }
+    -- Extra modules boost score so newer catalogs are preferred.
+    local FRESHNESS = {
+        "git.lua",
+        "kube.lua",
+        "tf.lua",
+        "history.lua",
+        "files.lua",
+    }
+
+    local function file_exists(path)
+        local fh = io.open(path, "r")
+        if not fh then
+            return false
+        end
+        fh:close()
+        return true
+    end
+
     local function looks_like_wezai(dir)
-        for _, name in ipairs({ "settings.lua", "stats.lua", "providers/init.lua", "palette.lua" }) do
-            local fh = io.open(dir .. name, "r")
-            if not fh then
+        for _, name in ipairs(FINGERPRINT) do
+            if not file_exists(dir .. name) then
                 return false
             end
-            fh:close()
         end
         return true
     end
+
+    local function completeness(dir)
+        local n = 0
+        for _, name in ipairs(FINGERPRINT) do
+            if file_exists(dir .. name) then
+                n = n + 1
+            end
+        end
+        for _, name in ipairs(FRESHNESS) do
+            if file_exists(dir .. name) then
+                n = n + 1
+            end
+        end
+        return n
+    end
+
     local ranked = {}
     for _, plug in ipairs(wezterm.plugin.list()) do
         local dir = tostring(plug.plugin_dir or "") .. slash .. "plugin" .. slash
         local blob = (tostring(plug.component) .. " " .. tostring(plug.url) .. " " .. dir):lower()
         if blob:find("wezai", 1, true) or looks_like_wezai(dir) then
-            local score = 3
+            -- Higher score wins: completeness first, then local / wsams preference.
+            local locality = 1
             if dir:find("sZsUsers", 1, true) or dir:find("filesCss", 1, true) then
-                score = 1
+                locality = 3
             elseif dir:find("wsams", 1, true) then
-                score = 2
+                locality = 2
             end
-            ranked[#ranked + 1] = { score = score, dir = dir }
+            ranked[#ranked + 1] = {
+                score = completeness(dir) * 10 + locality,
+                dir = dir,
+            }
         end
     end
     table.sort(ranked, function(a, b)
-        return a.score < b.score
+        return a.score > b.score
     end)
     local root
     for i = 1, #ranked do
@@ -41,7 +85,12 @@ do
     root = root or (ranked[1] and ranked[1].dir)
     if root then
         package.path = table.concat({ package.path, root .. "?.lua", root .. "?/init.lua" }, ";")
-        wezterm.log_info("wezai: load path " .. root)
+        local has_tf = file_exists(root .. "tf.lua")
+        wezterm.log_info(
+            "wezai: load path "
+                .. root
+                .. (has_tf and " (tf.lua ok)" or " (tf.lua MISSING — run wezterm.plugin.update_all() or sync local checkout)")
+        )
     else
         wezterm.log_warn("wezai: could not locate plugin modules")
     end
@@ -56,7 +105,45 @@ local context = require("context")
 local history = require("history")
 local git = require("git")
 local kube = require("kube")
-local tf = require("tf")
+
+-- Soft-load @tf so a stale install cannot take down the whole plugin.
+local tf
+do
+    local ok, mod = pcall(require, "tf")
+    if ok then
+        tf = mod
+    else
+        wezterm.log_warn(
+            "wezai: @tf catalog disabled — "
+                .. tostring(mod)
+                .. " (sync plugin: wezterm.plugin.update_all() or update your local require path)"
+        )
+        tf = {
+            list_actions = function()
+                return {}
+            end,
+            parse_line = function()
+                return nil
+            end,
+            run_action = function(window, pane, config)
+                local ai = ui.ensure_ai_pane(window, pane, config)
+                ui.ai_print(
+                    ai,
+                    "@tf unavailable — plugin missing tf.lua. Run wezterm.plugin.update_all() then reload config.",
+                    "error"
+                )
+            end,
+            collect_attach = function()
+                return nil, "tf module not loaded"
+            end,
+            open_picker = function(window, pane, config)
+                local ai = ui.ensure_ai_pane(window, pane, config)
+                ui.ai_print(ai, "@tf unavailable — update the wezai plugin cache.", "error")
+            end,
+        }
+    end
+end
+
 local palette = require("palette")
 local files = require("files")
 local providers = require("providers")

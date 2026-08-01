@@ -17,7 +17,7 @@ Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `
 | `CTRL+SHIFT+P` | Palette — jump to any action without typing a full Ask line |
 | `CTRL+SHIFT+G` | Same palette, pre-filtered to `@git` |
 | `CTRL+SHIFT+K` | Same palette, pre-filtered to `@kube` |
-| `CTRL+SHIFT+T` | Same palette, pre-filtered to `@tf` |
+| `CTRL+ALT+T` | Same palette, pre-filtered to `@tf` |
 | `CTRL+SHIFT+H` | Same palette, pre-filtered to `@history` |
 
 You do **not** need `CTRL+I` before the palette. From the shell: `CTRL+SHIFT+P` → type → Enter.
@@ -267,7 +267,9 @@ Ask-with-context attach tokens: `@kube:pods`, `@kube:events`, `@kube:all`, `@kub
 
 ## `@tf` actions
 
-Open via `CTRL+SHIFT+P` → `@tf`, or `CTRL+SHIFT+T`, or Ask → `@tf` / `@tf:validate`.
+Open via `CTRL+SHIFT+P` → type `@tf`, or `CTRL+ALT+T`, or Ask → `@tf` / `@tf:validate`.
+
+> **Not seeing `@tf`?** The catalog ships in wezai ≥ 1.5.0. Run `wezterm.plugin.update_all()` (debug overlay or temporarily from config), reload WezTerm, then open the palette and type `tf`. Check the log for `wezai: load path … (tf.lua ok)`. `CTRL+SHIFT+T` is WezTerm’s **new tab** — the tf shortcut is `CTRL+ALT+T`.
 
 Commands use the **shell pane cwd** (`terraform -chdir=…` for show/AI). wezai resolves the `terraform` binary the same way as kubectl (Homebrew/asdf/mise + login shell), or set `tf.terraform = "/usr/local/bin/terraform"`.
 
@@ -307,7 +309,7 @@ Commands use the **shell pane cwd** (`terraform -chdir=…` for show/AI). wezai 
 | `@tf:review` | Bugs / insecure defaults / missing providers |
 
 ```
-CTRL+SHIFT+T → @tf:validate
+CTRL+ALT+T → @tf:validate
 CTRL+I → @tf:generate S3 bucket with versioning and block public access
 CTRL+I → @tf:debug   (after a failed plan — select the error first)
 ```
@@ -400,10 +402,10 @@ CTRL+SHIFT+H → type kubectl → pick row → Insert (edit) or Run
 ### “Validate and debug this Terraform module”
 
 ```
-CTRL+SHIFT+T → @tf:validate
-CTRL+SHIFT+T → @tf:plan
+CTRL+ALT+T → @tf:validate
+CTRL+ALT+T → @tf:plan
 # select the error output, then:
-CTRL+SHIFT+T → @tf:debug
+CTRL+ALT+T → @tf:debug
 ```
 
 Or generate new HCL:
@@ -435,6 +437,7 @@ Then write it with `@@main.tf …` after reviewing the suggestion.
 | Two right panes | Close extras; reload config — wezai reattaches one output pane |
 | Palette is WezTerm’s, not wezai | Reload config; wezai overrides `CTRL+SHIFT+P`. Or set `keybinding_palette` |
 | Empty `@history` | Run commands in fish/zsh/bash first; check `history.tail_bytes` / `palette_n` |
+| No `@tf` in palette | Need wezai ≥ 1.5.0 with `plugin/tf.lua`. `wezterm.plugin.update_all()` then reload. Log should say `tf.lua ok`. Shortcut is `CTRL+ALT+T` (not `CTRL+SHIFT+T`) |
 | Plugin not loading | `require` local path or publish URL; ensure cache has `plugin/palette.lua` |
 
 ---

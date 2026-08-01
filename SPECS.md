@@ -184,7 +184,7 @@ Unified fuzzy `InputSelector` with scopes:
 - full (Ask helpers + git + kube + tf + history rows)
 - `git` (`CTRL+SHIFT+G`)
 - `kube` (`CTRL+SHIFT+K`)
-- `tf` (`CTRL+SHIFT+T`)
+- `tf` (`CTRL+ALT+T` — not `CTRL+SHIFT+T`, which is WezTerm SpawnTab)
 - `history` (`CTRL+SHIFT+H`) and filtered history scopes
 
 Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, Attach/Edit file (fuzzy), Undo edit, Copy last command, Shorter re-ask, Pick model, Clear chat memory.
@@ -304,7 +304,7 @@ Per-tab: chat turns (capped by `chat_max_turns`), last question/command, last ed
 | History scope | `CTRL\|SHIFT+h` | History palette |
 | Git scope | `CTRL\|SHIFT+g` | Git palette |
 | Kube scope | `CTRL\|SHIFT+k` | Kube palette |
-| Terraform scope | `CTRL\|SHIFT+t` | Terraform palette |
+| Terraform scope | `CTRL\|ALT+t` | Terraform palette (avoids WezTerm SpawnTab on `CTRL\|SHIFT+t`) |
 
 Single-letter keys are also bound with opposite case for WezTerm quirks.
 
@@ -349,7 +349,7 @@ Shared transport: `providers.proc`.
 
 ## 9. Bootstrap / module path
 
-WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scanning `wezterm.plugin.list()` for fingerprint files (`settings.lua`, `stats.lua`, `providers/init.lua`, `palette.lua`) and prefers local/`wsams` clones. Then extends `package.path` for `?.lua` and `?/init.lua`.
+WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scanning `wezterm.plugin.list()` for fingerprint files (`settings.lua`, `stats.lua`, `providers/init.lua`, `palette.lua`). Among matches it **prefers the most complete install** (counts `git.lua` / `kube.lua` / `tf.lua` / …) so a stale local checkout cannot shadow an updated GitHub cache that has newer catalogs. Local/`wsams` paths win only as a tie-breaker. Then extends `package.path` for `?.lua` and `?/init.lua`. `@tf` is soft-required — a missing `tf.lua` logs a warning and disables that catalog instead of failing the whole plugin.
 
 ---
 
