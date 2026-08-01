@@ -357,8 +357,10 @@ local function resolve_synthetics(synthetics, window, pane, cwd, config)
                 table.insert(labels, "@" .. syn)
             end
         elseif syn:match("^tf:") then
-            local tfmod = require("tf")
-            if not cwd then
+            local tok, tfmod = pcall(require, "tf")
+            if not tok then
+                table.insert(errors, "@" .. syn .. " failed: tf module not loaded (update wezai plugin)")
+            elseif not cwd then
                 table.insert(errors, "@" .. syn .. " needs pane cwd")
             else
                 local content, terr = tfmod.collect_attach(syn, cwd, config)

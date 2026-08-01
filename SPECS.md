@@ -7,7 +7,8 @@
 
 This document is the canonical description of what wezai **is**, how it is **structured**, and the **behaviors / constraints** that must be preserved when changing code. Prefer this file over chat history.
 
-User-facing walkthroughs live in [GUIDE.md](GUIDE.md). Install / config sketch: [README.md](README.md).
+Agent working notes (reserved shortcuts, load-path pitfalls): [AGENTS.md](AGENTS.md).  
+User-facing walkthroughs: [GUIDE.md](GUIDE.md). Install / config sketch: [README.md](README.md).
 
 ---
 
@@ -72,7 +73,7 @@ plugin/
     gemini_api.lua  -- Google Gemini generateContent
     ollama_bin.lua  -- ollama CLI
     lms_bin.lua     -- LM Studio `lms` CLI
-README.md GUIDE.md SPECS.md LICENSE
+README.md GUIDE.md SPECS.md AGENTS.md LICENSE
 package.json .releaserc.json renovate.json
 .github/workflows/release.yml
 .github/workflows/renovate.yml
@@ -184,7 +185,7 @@ Unified fuzzy `InputSelector` with scopes:
 - full (Ask helpers + git + kube + tf + history rows)
 - `git` (`CTRL+SHIFT+G`)
 - `kube` (`CTRL+SHIFT+K`)
-- `tf` (`CTRL+SHIFT+T`)
+- `tf` (`CTRL+ALT+T` — not `CTRL+SHIFT+T`, which is WezTerm SpawnTab)
 - `history` (`CTRL+SHIFT+H`) and filtered history scopes
 
 Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, Attach/Edit file (fuzzy), Undo edit, Copy last command, Shorter re-ask, Pick model, Clear chat memory.
@@ -304,7 +305,9 @@ Per-tab: chat turns (capped by `chat_max_turns`), last question/command, last ed
 | History scope | `CTRL\|SHIFT+h` | History palette |
 | Git scope | `CTRL\|SHIFT+g` | Git palette |
 | Kube scope | `CTRL\|SHIFT+k` | Kube palette |
-| Terraform scope | `CTRL\|SHIFT+t` | Terraform palette |
+| Terraform scope | `CTRL\|ALT+t` | Terraform palette |
+
+**Reserved:** `CTRL+SHIFT+T` is WezTerm **`SpawnTab`** — never bind wezai to it. See [AGENTS.md](AGENTS.md).
 
 Single-letter keys are also bound with opposite case for WezTerm quirks.
 
@@ -349,7 +352,7 @@ Shared transport: `providers.proc`.
 
 ## 9. Bootstrap / module path
 
-WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scanning `wezterm.plugin.list()` for fingerprint files (`settings.lua`, `stats.lua`, `providers/init.lua`, `palette.lua`) and prefers local/`wsams` clones. Then extends `package.path` for `?.lua` and `?/init.lua`.
+WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scanning `wezterm.plugin.list()` for fingerprint files (`settings.lua`, `stats.lua`, `providers/init.lua`, `palette.lua`). Among matches it **prefers the most complete install** (counts `git.lua` / `kube.lua` / `tf.lua` / …) so a stale local checkout cannot shadow an updated GitHub cache that has newer catalogs. Local/`wsams` paths win only as a tie-breaker. Then extends `package.path` for `?.lua` and `?/init.lua`. `@tf` is soft-required — a missing `tf.lua` logs a warning and disables that catalog instead of failing the whole plugin.
 
 ---
 
@@ -416,6 +419,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 
 | Goal | Start here |
 |------|------------|
+| Reserved shortcuts / agent pitfalls | `AGENTS.md` |
 | Ask / keys / orchestration | `plugin/init.lua` |
 | Defaults / merge | `plugin/settings.lua` |
 | `@` parsing / prepare / attach errors | `plugin/context.lua` |

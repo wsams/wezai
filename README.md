@@ -75,7 +75,7 @@ WezTerm clones plugins into its cache on first `require`. After you pull new com
 | `CTRL+SHIFT+P` | **Palette** — type `@git`, `@kube`, `@tf`, `@history`, or `Ask` to filter |
 | `CTRL+SHIFT+G` | Palette scoped to `@git` |
 | `CTRL+SHIFT+K` | Palette scoped to `@kube` |
-| `CTRL+SHIFT+T` | Palette scoped to `@tf` |
+| `CTRL+ALT+T` | Palette scoped to `@tf` (not `CTRL+SHIFT+T` — that is WezTerm’s new tab) |
 | `CTRL+SHIFT+H` | Palette scoped to `@history` |
 
 Stay on your **shell** pane. The right split is **output only** (answers, diffs, git/kube/tf status). Don’t run git from that pane — wezai always uses your shell’s cwd.
@@ -128,7 +128,7 @@ wezai.apply_to_config(config, {
   keybinding_history = { key = "h", mods = "CTRL|SHIFT" },
   keybinding_git = { key = "g", mods = "CTRL|SHIFT" },
   keybinding_kube = { key = "k", mods = "CTRL|SHIFT" },
-  keybinding_tf = { key = "t", mods = "CTRL|SHIFT" },
+  keybinding_tf = { key = "t", mods = "CTRL|ALT" },
 
   -- Optional: default ns + absolute kubectl if GUI PATH can't find it
   kube = { namespace = nil, kubectl = nil, confirm_mutate = true },
