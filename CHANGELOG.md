@@ -1,3 +1,10 @@
+## [1.6.1](https://github.com/wsams/wezai/compare/v1.6.0...v1.6.1) (2026-08-01)
+
+
+### Bug Fixes
+
+* **tf:** make [@tf](https://github.com/tf) visible — load path + shortcut ([#12](https://github.com/wsams/wezai/issues/12)) ([943921d](https://github.com/wsams/wezai/commit/943921d4bbb9f2fd46e0988d7cb908b523b6d78a))
+
 # [1.6.0](https://github.com/wsams/wezai/compare/v1.5.0...v1.6.0) (2026-07-31)
 
 
