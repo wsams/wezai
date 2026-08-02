@@ -41,7 +41,15 @@ function B.ask(cfg, user_text)
         cfg.timeout or 60
     )
     if not ok then
-        return false, nil, stderr ~= "" and stderr or "HTTP transport failed"
+        local detail = stderr ~= "" and stderr or "HTTP transport failed"
+        -- Ollama (and similar) send 0 bytes until the runner finishes loading.
+        -- A short curl timeout cancels that load, so the next try is cold again.
+        if detail:find("timed out", 1, true) or detail:find("Operation timed out", 1, true) then
+            detail = detail
+                .. "\nHint: raise config.timeout (e.g. 300–600) for local models; "
+                .. "a mid-load disconnect aborts Ollama warmup so the model never stays warm."
+        end
+        return false, nil, detail
     end
 
     local data, perr = proc.parse_json(stdout)

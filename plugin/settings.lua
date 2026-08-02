@@ -22,7 +22,10 @@ local BASE = {
         .. "Warn of dangerous commands. Avoid unnecessary verbosity. Prefer interactive commands that "
         .. "require user verification before proceeding when possible."
         .. REPLY_CONTRACT,
-    timeout = 30,
+    -- curl --max-time. 30s is too short for cold-loading large local models
+    -- (Ollama aborts the load if the client disconnects mid-warmup). Cloud
+    -- APIs usually answer faster; raise further for big local GGUFs.
+    timeout = 120,
     show_loading = true,
     type = "http",
     api_key = nil,

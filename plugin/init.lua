@@ -292,7 +292,15 @@ local function handle_edit_request(window, shell_pane, request, config)
         return
     end
 
+    -- Prefer "file"; accept common aliases models invent despite the prompt.
     local new_content = response.file
+    if type(new_content) ~= "string" or new_content == "" then
+        if type(response.content) == "string" and response.content ~= "" then
+            new_content = response.content
+        elseif type(response.new_content) == "string" and response.new_content ~= "" then
+            new_content = response.new_content
+        end
+    end
     if type(new_content) ~= "string" or new_content == "" then
         ui.ai_print(ai_pane, "Edit response missing non-empty \"file\" field", "error")
         if response.message then

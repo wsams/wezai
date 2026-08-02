@@ -59,11 +59,10 @@ WezTerm clones plugins into its cache on first `require`. After you pull new com
 
 | `type` | What you need |
 |--------|----------------|
-| `"http"` | OpenAI-compatible `api_url` + `model` (+ `api_key` if required) |
+| `"http"` | OpenAI-compatible `api_url` + `model` (+ `api_key` if required). For Ollama: `http://127.0.0.1:11434/v1/chat/completions`, raise `timeout` (e.g. 300–600) for large cold loads, and prefer instruct models over “thinking” GGUFs (Ask/`@@` need JSON — see SPECS §4.4). |
 | `"local"` | LM Studio CLI (`lms_path`) |
 | `"ollama"` | `ollama_path` + `model` |
 | `"google"` | Gemini `api_key` + `model` (uses curl + WezTerm JSON) |
-
 ---
 
 ## Quick start

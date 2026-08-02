@@ -33,6 +33,45 @@ function M.clean_response(raw)
     return trim(table.concat(lines, "\n"))
 end
 
+--- First top-level `{ ... }` in `s`, respecting JSON strings/escapes.
+--- Thinking models often wrap the required object in prose; extract it.
+function M.extract_json_object(s)
+    if type(s) ~= "string" then
+        return nil
+    end
+    local start = s:find("{", 1, true)
+    if not start then
+        return nil
+    end
+    local depth = 0
+    local in_str = false
+    local escape = false
+    for i = start, #s do
+        local c = s:sub(i, i)
+        if in_str then
+            if escape then
+                escape = false
+            elseif c == "\\" then
+                escape = true
+            elseif c == '"' then
+                in_str = false
+            end
+        else
+            if c == '"' then
+                in_str = true
+            elseif c == "{" then
+                depth = depth + 1
+            elseif c == "}" then
+                depth = depth - 1
+                if depth == 0 then
+                    return s:sub(start, i)
+                end
+            end
+        end
+    end
+    return nil
+end
+
 function M.parse_json_response(raw)
     if type(raw) ~= "string" or trim(raw) == "" then
         return nil, "empty response"
@@ -44,6 +83,14 @@ function M.parse_json_response(raw)
         table.insert(candidates, trim(body))
     end
     table.insert(candidates, M.clean_response(raw))
+    local extracted = M.extract_json_object(raw)
+    if extracted then
+        table.insert(candidates, extracted)
+    end
+    local cleaned_extract = M.extract_json_object(M.clean_response(raw))
+    if cleaned_extract then
+        table.insert(candidates, cleaned_extract)
+    end
 
     for _, blob in ipairs(candidates) do
         local ok, decoded = pcall(wezterm.json_parse, blob)

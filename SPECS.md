@@ -119,9 +119,15 @@ Ask responses are parsed as JSON with:
 Edit responses:
 
 - `message`, `file` (full file contents), `command` (null)
+- Aliases accepted for the file body if `file` is missing/empty: `content`, `new_content` (models often invent these).
 
-`settings.REPLY_CONTRACT` is appended to custom `system_prompt` if it does not already mention `"message"`.
+`settings.REPLY_CONTRACT` is appended to custom `system_prompt` if it does not already mention `"message"`. Edit requests replace `system_prompt` with `context.EDIT_SYSTEM_PROMPT` (user style prompt is not used for `@@`).
 
+Parsing (`util.parse_json_response`): try raw → fenced body → fence-stripped → first top-level `{…}` via `util.extract_json_object` (handles prose wrappers from chatty/thinking models). Prefer **instruct** models that emit JSON only; thinking models are a poor fit (see [AGENTS.md](AGENTS.md)).
+
+### 4.4.1 HTTP `timeout` (local LLMs)
+
+`timeout` (seconds) maps to curl `--max-time` (default **120**). Cloud chat APIs usually finish sooner. Local OpenAI-compatible servers (notably **Ollama**) may send **no response bytes** until the model runner finishes loading and warmup. If the client disconnects mid-load, Ollama aborts the load (`client connection closed before llama-server finished loading`), so the model never stays warm and every attempt looks cold. For large local models set `timeout` to **300–600**, or pre-warm the model. Transport errors that look like curl timeouts get an explanatory hint from `providers.chat_http`.
 ### 4.5 Dialect + platform injection
 
 On every ask (`with_dialect` in `init.lua`):
@@ -321,7 +327,7 @@ Important fields (see `settings.lua` for full defaults):
 
 | Key | Role |
 |-----|------|
-| `type`, `model`, `models`, `api_url`, `api_key`, `headers`, `timeout` | Provider |
+| `type`, `model`, `models`, `api_url`, `api_key`, `headers`, `timeout` | Provider (`timeout` default 120s; raise for cold local loads — §4.4.1) |
 | `ollama_path`, `lms_path` | CLI backends |
 | `system_prompt` | Style; dialect/OS appended per request; JSON contract appended if needed |
 | `max_file_bytes`, `files.*` | Attach budget + large-file policy |
@@ -341,13 +347,14 @@ Important fields (see `settings.lua` for full defaults):
 
 | `type` | Module | Notes |
 |--------|--------|-------|
-| `http` | `providers.chat_http` | OpenAI-compatible `/v1/chat/completions` |
+| `http` | `providers.chat_http` | OpenAI-compatible `/v1/chat/completions` (includes Ollama at `http://host:11434/v1/chat/completions`) |
 | `google` | `providers.gemini_api` | Gemini `generateContent` + JSON schema |
 | `ollama` | `providers.ollama_bin` | `ollama run … --format json` |
 | `local` | `providers.lms_bin` | `lms chat …` |
 
 Shared transport: `providers.proc`.
 
+For `http` + Ollama: pick an **instruct** model that obeys §4.4; set a high `timeout` for cold loads (§4.4.1). `type = "ollama"` uses the CLI path instead of HTTP and has different latency characteristics.
 ---
 
 ## 9. Bootstrap / module path
@@ -403,7 +410,9 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] `@tf:generate …` / `@tf:debug` use the model; attach `@tf:state what’s orphaned?` works.
 - [ ] Stats banner/line appears; `~/.local/share/wezai/stats.json` updates.
 - [ ] Git/kube/tf/history always use shell cwd (not AI pane).
-
+- [ ] Local Ollama HTTP: with an unloaded large model, `timeout` ≥ load+warmup still returns JSON (not curl 28 / 0 bytes); second Ask is fast while model stays loaded.
+- [ ] Chatty model wrapping JSON in prose still parses via `extract_json_object` when a single object is present.
+- [ ] `@@` edit accepting `content` alias when `file` is missing still shows diff confirm.
 ---
 
 ## 13. Out of scope / non-goals
@@ -420,6 +429,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 | Goal | Start here |
 |------|------------|
 | Reserved shortcuts / agent pitfalls | `AGENTS.md` |
+| Local Ollama timeout / thinking models / JSON contract | `AGENTS.md` (§ Local HTTP), SPECS §4.4–4.4.1 |
 | Ask / keys / orchestration | `plugin/init.lua` |
 | Defaults / merge | `plugin/settings.lua` |
 | `@` parsing / prepare / attach errors | `plugin/context.lua` |

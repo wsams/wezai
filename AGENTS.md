@@ -32,6 +32,37 @@ Other WezTerm defaults to treat carefully when picking shortcuts (non-exhaustive
 
 ---
 
+## Local HTTP / Ollama pitfalls
+
+Ask and `@@` edit **require** a JSON object reply (SPECS §4.4). That is not optional style — parsers hard-fail without it.
+
+### Prefer instruct models over “thinking” models
+
+wezai is a **structured-output** client (`message` + `command`, or `message` + `file` for edits). Models that spend hundreds/thousands of tokens on chain-of-thought (e.g. OpenAI `gpt-oss:*`, other “thinking” GGUFs) often:
+
+- wrap JSON in prose → `Failed to parse JSON response` (mitigated somewhat by `util.extract_json_object`, not a cure)
+- invent field names (`content` instead of `file`) → edit errors
+- burn long completion budgets on tiny prompts
+
+Prefer instruction-tuned chat/coder models that follow “JSON only” (e.g. `qwen2.5:14b`, `qwen2.5-coder:14b`). Do **not** “fix” thinking-model flakiness by removing the JSON contract from `system_prompt` — Ask/Edit still need it. Custom style prompts are fine; `settings.finalize` appends `REPLY_CONTRACT` when `"message"` is absent. `@@` edit **ignores** user `system_prompt` and uses `context.EDIT_SYSTEM_PROMPT`.
+
+### `timeout` vs cold model load
+
+Default `timeout` is **120s** (`settings.lua`). For large local models over `type = "http"` (Ollama OpenAI-compatible `/v1/chat/completions`):
+
+1. `/api/tags` can be instant while chat is still **0 bytes** until `llama-server` finishes load + warmup.
+2. curl `--max-time` disconnect mid-load → Ollama logs `client connection closed before llama-server finished loading` and **aborts** the load.
+3. Next request is cold again — so a too-short timeout looks like “it never warms.”
+
+Raise `timeout` to **300–600** for big local GGUFs, or pre-warm (`ollama run …` / generate with `keep_alive`). `chat_http` appends a hint when curl reports a timeout.
+
+### Config reload / local checkout
+
+- Prefer `plugin.require("/absolute/path/to/wezai")` while developing; **do not** call `wezterm.plugin.update_all()` on every reload.
+- GitHub installs: run `update_all()` once after pulling, then reload.
+
+---
+
 ## Related pitfalls
 
 - Plugin modules load via fingerprint scan in `init.lua`. Prefer the **most complete** install (`tf.lua`, etc.) so a stale local checkout cannot hide new catalogs.
