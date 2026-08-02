@@ -1,3 +1,10 @@
+## [1.6.2](https://github.com/wsams/wezai/compare/v1.6.1...v1.6.2) (2026-08-02)
+
+
+### Bug Fixes
+
+* Local ollama timeouts ([27bc7b5](https://github.com/wsams/wezai/commit/27bc7b571cf7c97ec300c86fa20596b2961b2a50))
+
 ## [1.6.1](https://github.com/wsams/wezai/compare/v1.6.0...v1.6.1) (2026-08-01)
 
 
