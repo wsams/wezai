@@ -46,17 +46,23 @@ local KIND_STYLE = {
 -- Marker string WEZAI_OUTPUT_PANE lets us re-detect the pane after the banner scrolls away.
 local function keep_alive_args(pad)
     local indent = string.rep(" ", pad or default_pad)
+    local brand = util.brand_with_version()
     if util.is_windows then
-        return { "cmd", "/c", "echo wezai output pane WEZAI_OUTPUT_PANE && ping -t localhost >NUL" }
+        return {
+            "cmd",
+            "/c",
+            "echo " .. brand .. " output pane WEZAI_OUTPUT_PANE && ping -t localhost >NUL",
+        }
     end
     return {
         "sh",
         "-c",
         string.format(
-            "printf '\\r\\n%s%swezai%s — output pane\\r\\n%s%sFollow up: CTRL+i%s · %sCTRL+SHIFT+P%s command palette\\r\\n%sType @git / @kube / @tf / @history in the palette to filter\\r\\n\\r\\n'; "
+            "printf '\\r\\n%s%s%s%s — output pane\\r\\n%s%sFollow up: CTRL+i%s · %sCTRL+SHIFT+P%s command palette\\r\\n%sType @git / @kube / @tf / @history in the palette to filter\\r\\n\\r\\n'; "
                 .. "WEZAI_OUTPUT_PANE=1; while true; do sleep 86400; done",
             indent,
             BOLD .. CYAN,
+            brand,
             RESET,
             indent,
             DIM,

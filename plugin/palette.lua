@@ -1,4 +1,5 @@
 local wezterm = require("wezterm")
+local util = require("util")
 local ui = require("ui")
 local git = require("git")
 local kube = require("kube")
@@ -185,17 +186,18 @@ function M.show(window, pane, config, opts)
             return
         end
 
+        local brand = util.brand_with_version()
         local title
         if scope == "git" then
-            title = "wezai · @git  (type to filter)"
+            title = brand .. " · @git  (type to filter)"
         elseif scope == "kube" then
-            title = "wezai · @kube  (type to filter)"
+            title = brand .. " · @kube  (type to filter)"
         elseif scope == "tf" then
-            title = "wezai · @tf  (type to filter)"
+            title = brand .. " · @tf  (type to filter)"
         elseif scope and tostring(scope):find("^history") then
-            title = "wezai · @history  (type to filter)"
+            title = brand .. " · @history  (type to filter)"
         else
-            title = "wezai · type @git / @kube / @tf / @history / Ask…"
+            title = brand .. " · type @git / @kube / @tf / @history / Ask…"
         end
 
         -- Open selector on the current pane (do not create AI pane first — that steals focus)
