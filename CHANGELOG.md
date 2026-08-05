@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/wsams/wezai/compare/v1.6.2...v1.7.0) (2026-08-05)
+
+
+### Features
+
+* **edit:** show diff in confirm overlay and configure backups ([#16](https://github.com/wsams/wezai/issues/16)) ([cd45c22](https://github.com/wsams/wezai/commit/cd45c22f0c8fcf4afe5ebe26a4904f4c7219d8bd))
+
 ## [1.6.2](https://github.com/wsams/wezai/compare/v1.6.1...v1.6.2) (2026-08-02)
 
 
