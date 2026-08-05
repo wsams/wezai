@@ -770,8 +770,12 @@ add_action({
                     return
                 end
                 if ok_read then
-                    local bak = gi .. ((ctx.config.backup_suffix) or ".wezai.bak")
-                    util.write_text_file(bak, existing)
+                    local edit = require("edit")
+                    local bak = edit.backup_path_for(gi, ctx.config)
+                    if bak then
+                        util.ensure_parent_dir(bak)
+                        util.write_text_file(bak, existing)
+                    end
                 end
                 local wok, werr = util.write_text_file(gi, new_content)
                 if not wok then

@@ -52,7 +52,7 @@ Public entrypoint: `plugin/init.lua` → `apply_to_config(wezterm_config, user_c
 ```
 plugin/
   init.lua          -- bootstrap, keybindings, ask/edit orchestration, palette hooks
-  settings.lua      -- defaults + merge (nested tables: ai_pane, history, git, kube, tf, stats, files)
+  settings.lua      -- defaults + merge (nested tables: ai_pane, history, git, kube, tf, stats, files, backup)
   util.lua          -- paths, files, JSON parse, run_cmd (pcall), resolve_executable, large-file read
   ui.lua            -- AI pane lifecycle, styling, InputSelector, usage banner
   session.lua       -- per-tab chat memory + history events + last edit
@@ -144,7 +144,8 @@ Command labels print as `(fish/macos)` style when showing suggested commands.
 
 - `context.redact` strips common secrets (keys, tokens, JWTs, private keys) before prompts/history.
 - `shell.is_risky` + confirm before sending dangerous commands (includes kubectl mutate/exec patterns, terraform apply/destroy/import/state-rm/force-unlock, and git force/push/reset/etc.).
-- Edit apply and kube/tf mutate actions confirm unless config disables confirms.
+- Edit apply and kube/tf mutate actions confirm unless config disables confirms. Edit confirm embeds the unified diff in the overlay (WezTerm InputSelector covers the tab).
+- Edit backups are timestamped and configurable (`backup.enabled` / `backup.dir` / `backup.suffix`); Undo uses the bak file or in-memory prior content.
 - Kube AI helpers must prefer **read-only** next steps (get/describe/logs); never bake org-specific cluster/namespace names into the catalog.
 - Terraform AI helpers must prefer **read-only** next steps (validate/fmt/plan/state list) and `@@` file edits; never bake account/org-specific names into the catalog.
 
@@ -167,7 +168,7 @@ Supports:
 | Token | Behavior |
 |-------|----------|
 | `@path` / `@"./path with spaces"` | Attach file (read-only) |
-| `@@path instruction` | Create or rewrite file (diff + confirm) |
+| `@@path instruction` | Create or rewrite file (unified diff in confirm overlay + AI pane) |
 | `@` / `@pick` / `@@` / `@@pick` | Fuzzy file picker (`files.lua`) |
 | `@clipboard` / `@selection` | Clipboard / selection |
 | `@git` / `@git:id` | Git picker or action (see §5.4) |
@@ -179,6 +180,10 @@ Supports:
 **Path parsing:** unquoted `@refs` strip trailing sentence punctuation (`?!. ,;:)` …) so `@package.json?` works. Quoted paths are literal.
 
 **New files:** `@@newfile.txt …` creates if parent dir exists (`is_new`, empty original, Create confirm).
+
+**Edit confirm:** WezTerm `InputSelector` covers the tab, so the unified diff is embedded in the selector choices (Apply / Cancel first; colored diff preview below). The full diff is also printed in the AI pane. Selecting a preview row re-opens the selector.
+
+**Backups:** On Apply, write a timestamped backup unless `backup.enabled = false`. Default name: `<file>.<YYYYMMDD-HHMMSS>.wezai.bak` next to the target, or under `backup.dir` when set. Undo restores from the backup path, or from in-memory prior content when backups are disabled.
 
 **Large `@` files:** soft budget `max_file_bytes` (default 200000). Oversized attaches use head+tail (`files.large_file = "head_tail"`) with truncation markers. `@@` edit still requires the full file under the limit.
 
@@ -321,7 +326,7 @@ Single-letter keys are also bound with opposite case for WezTerm quirks.
 
 ## 7. Configuration surface
 
-Merged in `settings.finalize`. Nested keys deep-merged: `ai_pane`, `history`, `git`, `kube`, `tf`, `stats`, `files`.
+Merged in `settings.finalize`. Nested keys deep-merged: `ai_pane`, `history`, `git`, `kube`, `tf`, `stats`, `files`, `backup`.
 
 Important fields (see `settings.lua` for full defaults):
 
@@ -332,7 +337,7 @@ Important fields (see `settings.lua` for full defaults):
 | `system_prompt` | Style; dialect/OS appended per request; JSON contract appended if needed |
 | `max_file_bytes`, `files.*` | Attach budget + large-file policy |
 | `ai_pane.*` | Split direction/size/pad |
-| `backup_suffix` | Default `.wezai.bak` |
+| `backup.enabled`, `backup.suffix`, `backup.dir` | Edit backups (default on; suffix `.wezai.bak`; `dir` nil = alongside file). `backup = false` disables. Legacy `backup_suffix` still maps to `backup.suffix` |
 | `require_edit_confirm`, `require_risk_confirm` | Safety toggles |
 | `kube.namespace`, `kube.kubectl`, `kube.confirm_mutate`, `kube.max_attach_bytes` | kubectl defaults / binary / attach cap |
 | `tf.terraform`, `tf.confirm_mutate`, `tf.max_attach_bytes` | terraform binary / mutate confirms / attach cap |
@@ -412,7 +417,8 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] Git/kube/tf/history always use shell cwd (not AI pane).
 - [ ] Local Ollama HTTP: with an unloaded large model, `timeout` ≥ load+warmup still returns JSON (not curl 28 / 0 bytes); second Ask is fast while model stays loaded.
 - [ ] Chatty model wrapping JSON in prose still parses via `extract_json_object` when a single object is present.
-- [ ] `@@` edit accepting `content` alias when `file` is missing still shows diff confirm.
+- [ ] `@@` edit accepting `content` alias when `file` is missing still shows diff confirm (diff visible inside the overlay).
+- [ ] Apply writes `<file>.<YYYYMMDD-HHMMSS>.wezai.bak`; `backup.enabled = false` skips bak and Undo still works; `backup.dir` relocates bak files.
 ---
 
 ## 13. Out of scope / non-goals
