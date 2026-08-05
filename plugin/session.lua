@@ -5,7 +5,7 @@ local M = {}
 -- tab_id -> {
 --   turns = { {role, text}, ... },
 --   last_command, last_question,
---   last_edit = {path, backup},
+--   last_edit = {path, backup?, content?},
 --   events = { {kind, text, path?, instruction?, t}, ... }
 -- }
 local store = {}
@@ -66,8 +66,10 @@ function M.get_last_question(window)
     return bucket(window).last_question
 end
 
-function M.set_last_edit(window, path, backup)
-    bucket(window).last_edit = { path = path, backup = backup }
+--- Remember last @@ apply for undo. `backup` is a path on disk (or nil when
+--- backups are disabled); `content` is the pre-edit text kept in memory.
+function M.set_last_edit(window, path, backup, content)
+    bucket(window).last_edit = { path = path, backup = backup, content = content }
 end
 
 function M.get_last_edit(window)

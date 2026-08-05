@@ -648,25 +648,34 @@ function M.input_select(window, pane, title, choices, callback, opts)
     local shell_pane = M.shell_pane_for(window, pane)
     local safe = {}
     for _, c in ipairs(choices or {}) do
+        local label = c.label
+        -- Allow wezterm.format tables; sanitize plain strings only.
+        if type(label) ~= "table" then
+            label = M.sanitize_utf8(label or c.id or "?")
+        end
         table.insert(safe, {
             id = c.id,
-            label = M.sanitize_utf8(c.label or c.id or "?"),
+            label = label,
         })
     end
-    window:perform_action(
-        act.InputSelector({
-            title = M.sanitize_utf8(title or "wezai"),
-            choices = safe,
-            fuzzy = fuzzy and true or false,
-            fuzzy_description = opts.fuzzy_description or "Fuzzy matching: ",
-            action = wezterm.action_callback(function(win, p, id, label)
-                -- InputSelector may hand back the AI pane as `p` — normalize to shell
-                local sp = M.shell_pane_for(win, p)
-                callback(win, sp, id, label)
-            end),
-        }),
-        shell_pane or pane
-    )
+    local selector = {
+        title = M.sanitize_utf8(title or "wezai"),
+        choices = safe,
+        fuzzy = fuzzy and true or false,
+        fuzzy_description = opts.fuzzy_description or "Fuzzy matching: ",
+        action = wezterm.action_callback(function(win, p, id, label)
+            -- InputSelector may hand back the AI pane as `p` — normalize to shell
+            local sp = M.shell_pane_for(win, p)
+            callback(win, sp, id, label)
+        end),
+    }
+    if opts.description then
+        selector.description = M.sanitize_utf8(opts.description)
+    end
+    if opts.alphabet then
+        selector.alphabet = opts.alphabet
+    end
+    window:perform_action(act.InputSelector(selector), shell_pane or pane)
 end
 
 function M.confirm(window, pane, title, yes_id, callback)

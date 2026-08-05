@@ -5,7 +5,7 @@
 > **Alpha software.** wezai is in active development and under heavy testing. Behavior and APIs may change. If you hit a bug or have an idea, please [open an issue](https://github.com/wsams/wezai/issues) — reports are welcome and help shape the project. See [CONTRIBUTING.md](CONTRIBUTING.md) for what to include.
 
 - Ask questions with file, clipboard, git, kube, terraform, and selection context  
-- Edit files in one pass (`@@path`) with a diff confirm  
+- Edit files in one pass (`@@path`) with a unified diff confirm  
 - One palette (`CTRL+SHIFT+P`) for Ask helpers, `@git:…`, `@kube:…`, `@tf:…`, and `@history`  
 - Shell-aware suggestions, secret redaction, risky-command confirms  
 
@@ -159,7 +159,10 @@ wezai.apply_to_config(config, {
     -- head_bytes = 120000,
     -- tail_bytes = 80000,
   },
-  backup_suffix = ".wezai.bak",
+  -- @@ edit backups (timestamped). Set enabled = false to disable.
+  -- dir = nil writes next to the file; or e.g. "~/.local/share/wezai/bak"
+  backup = { enabled = true, suffix = ".wezai.bak", dir = nil },
+  -- backup_suffix = ".wezai.bak", -- legacy alias for backup.suffix
 
   -- Token/model usage (shown when the AI pane opens; persisted under ~/.local/share/wezai/stats.json)
   stats = { enabled = true },

@@ -71,7 +71,7 @@ Exactly **two** `@` signs, then path, then instruction:
 @@config.toml add a comment above the [server] section explaining the port
 ```
 
-Flow: model returns a full file → wezai shows a **diff** in the right pane → **Apply** or **Cancel**. Apply writes the file and keeps `notes.txt.wezai.bak`.
+Flow: model returns a full file → wezai shows a **unified diff** in the confirm overlay (and the right pane) → **Apply** or **Cancel**. Apply writes the file and keeps a timestamped backup such as `notes.txt.20260805-195530.wezai.bak` (configurable via `backup.*`; can be disabled).
 
 Undo: palette → **Undo last edit**.
 
@@ -117,7 +117,7 @@ Type to fuzzy-filter. Labels start with namespaces so filtering is easy:
 | **Fix last error** | Diagnose selection or recent scrollback; propose a fix |
 | **Explain last command** | Explain last command + output from scrollback |
 | **Edit file (`@@path …`)** | Opens Ask so you can type an edit |
-| **Undo last edit** | Restore last `@@` write from `.wezai.bak` |
+| **Undo last edit** | Restore last `@@` write from its backup (or in-memory prior text if backups are off) |
 | **Copy last command** | Clipboard: last AI command, else shell history, else scrollback |
 | **Re-ask last question (shorter)** | Same question, shorter answer |
 | **Pick model…** | Switch model for next requests (`models` list) |
@@ -422,7 +422,8 @@ Then write it with `@@main.tf …` after reviewing the suggestion.
 
 - Secrets (API keys, tokens, private keys) are redacted before send / memory  
 - Risky shell commands confirm before send (includes `terraform apply` / `destroy` / `force-unlock`)  
-- `@@` edits always show a diff unless you disable `require_edit_confirm`  
+- `@@` edits always show a unified diff in the confirm overlay unless you disable `require_edit_confirm`  
+- Edit backups are timestamped (`backup.suffix` / `backup.dir`); set `backup.enabled = false` to skip writing `.bak` files  
 - No force-push action in v1  
 - `@git:latest` uses `--ff-only` only  
 - Terraform AI helpers prefer validate/fmt/plan — not apply/destroy  

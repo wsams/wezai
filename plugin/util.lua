@@ -169,6 +169,41 @@ function M.is_absolute_path(path)
     return path:sub(1, 1) == "/"
 end
 
+function M.basename(path)
+    if not path or path == "" then
+        return ""
+    end
+    return path:match("([^/\\]+)$") or path
+end
+
+function M.dirname(path)
+    if not path or path == "" then
+        return nil
+    end
+    return path:match("^(.*)[/\\][^/\\]+$")
+end
+
+--- Create parent directories for `path` (mkdir -p). No-op if already present.
+function M.ensure_parent_dir(path)
+    local dir = M.dirname(path)
+    if not dir or dir == "" then
+        return true
+    end
+    if M.path_exists_as_dir(dir) then
+        return true
+    end
+    if not wezterm.run_child_process then
+        return false
+    end
+    local ok
+    if WIN then
+        ok = wezterm.run_child_process({ "cmd", "/c", "mkdir", dir })
+    else
+        ok = wezterm.run_child_process({ "mkdir", "-p", dir })
+    end
+    return ok == true
+end
+
 function M.expand_path(path, cwd)
     if not path or path == "" then
         return nil
