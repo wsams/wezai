@@ -476,4 +476,130 @@ function M.resolve_executable(name, opts)
     return nil
 end
 
+-- ---------------------------------------------------------------------------
+-- Install identity (semantic version from package.json, else short git sha)
+-- ---------------------------------------------------------------------------
+
+local install = {
+    plugin_dir = nil,
+    repo_dir = nil,
+    label = nil,
+}
+
+function M.set_install_dirs(plugin_dir, repo_dir)
+    install.plugin_dir = plugin_dir
+    install.repo_dir = repo_dir
+    install.label = nil
+end
+
+function M.plugin_dir()
+    return install.plugin_dir
+end
+
+function M.repo_dir()
+    return install.repo_dir
+end
+
+local function read_package_semver(repo_dir)
+    if not repo_dir or repo_dir == "" then
+        return nil
+    end
+    local path = repo_dir .. SEP .. "package.json"
+    local ok, content = M.read_text_file(path, 65536)
+    if not ok or type(content) ~= "string" then
+        return nil
+    end
+    local pok, data = pcall(wezterm.json_parse, content)
+    if not pok or type(data) ~= "table" then
+        return nil
+    end
+    local v = data.version
+    if type(v) == "string" and v:match("^%d+%.%d+") then
+        return v
+    end
+    return nil
+end
+
+local function read_git_sha_from_head_file(repo_dir)
+    local head_path = repo_dir .. SEP .. ".git" .. SEP .. "HEAD"
+    local ok, head = M.read_text_file(head_path, 4096)
+    if not ok or type(head) ~= "string" then
+        return nil
+    end
+    head = trim(head)
+    local sha = head:match("^(%x+)$")
+    if sha and #sha >= 7 then
+        return sha:sub(1, 7)
+    end
+    local ref = head:match("^ref:%s*(.+)$")
+    if not ref then
+        return nil
+    end
+    ref = trim(ref)
+    local ref_path = repo_dir .. SEP .. ".git" .. SEP .. ref:gsub("/", SEP)
+    local rok, ref_body = M.read_text_file(ref_path, 4096)
+    if rok and type(ref_body) == "string" then
+        local ref_sha = trim(ref_body):match("^(%x+)")
+        if ref_sha and #ref_sha >= 7 then
+            return ref_sha:sub(1, 7)
+        end
+    end
+    -- Packed refs fallback
+    local pok, packed = M.read_text_file(repo_dir .. SEP .. ".git" .. SEP .. "packed-refs", 1024 * 1024)
+    if not pok or type(packed) ~= "string" then
+        return nil
+    end
+    for line in (packed .. "\n"):gmatch("(.-)\n") do
+        if not line:match("^#") and not line:match("^%^") then
+            local psha, pref = line:match("^(%x+)%s+(.+)$")
+            if psha and trim(pref or "") == ref and #psha >= 7 then
+                return psha:sub(1, 7)
+            end
+        end
+    end
+    return nil
+end
+
+local function read_git_sha(repo_dir)
+    if not repo_dir or repo_dir == "" then
+        return nil
+    end
+    local ok, stdout = M.run_cmd({ "git", "-C", repo_dir, "rev-parse", "--short=7", "HEAD" })
+    if ok then
+        local sha = trim(stdout or "")
+        if sha:match("^%x+$") and #sha >= 7 then
+            return sha:sub(1, 7)
+        end
+    end
+    return read_git_sha_from_head_file(repo_dir)
+end
+
+--- Resolve install label: prefer package.json semver; include short sha when available
+--- so `update_all` pulls on main are visible between releases.
+--- Examples: `v1.7.0+fc6d5b5`, `v1.7.0`, `fc6d5b5`, or `?`.
+function M.version_label()
+    if install.label then
+        return install.label
+    end
+    local semver = read_package_semver(install.repo_dir)
+    local sha = read_git_sha(install.repo_dir)
+    local label
+    if semver and sha then
+        label = "v" .. semver .. "+" .. sha
+    elseif semver then
+        label = "v" .. semver
+    elseif sha then
+        label = sha
+    else
+        label = "?"
+    end
+    install.label = label
+    return label
+end
+
+--- Brand string with version, e.g. `wezai v1.7.0+fc6d5b5`.
+function M.brand_with_version()
+    return "wezai " .. M.version_label()
+end
+
 return M

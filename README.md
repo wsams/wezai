@@ -53,7 +53,7 @@ wezai.apply_to_config(config, {
 return config
 ```
 
-WezTerm clones plugins into its cache on first `require`. After you pull new commits (or edit a local checkout), run `wezterm.plugin.update_all()` once — from the debug overlay, or temporarily from your config — then reload WezTerm so the cache picks up the changes.
+WezTerm clones plugins into its cache on first `require`. After you pull new commits (or edit a local checkout), run `wezterm.plugin.update_all()` once — from the debug overlay, or temporarily from your config — then reload WezTerm so the cache picks up the changes. Palette titles and the AI pane banner show the installed version (e.g. `wezai v1.7.0+fc6d5b5`) so you can confirm the update landed.
 
 ### Providers
 

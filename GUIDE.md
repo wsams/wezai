@@ -97,6 +97,8 @@ Bare `@git:status` / `@tf:validate` / `@history` (nothing else) run **actions** 
 
 ## Command palette (`CTRL+SHIFT+P`)
 
+Palette titles and the AI output pane show the installed wezai version (semantic-release from `package.json`, plus a short git sha when available — e.g. `wezai v1.7.0+fc6d5b5`). After `wezterm.plugin.update_all()` + config reload, that label should change so you can confirm you pulled the new checkout.
+
 Type to fuzzy-filter. Labels start with namespaces so filtering is easy:
 
 | You type | You see |

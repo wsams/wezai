@@ -24,6 +24,8 @@ User-facing walkthroughs: [GUIDE.md](GUIDE.md). Install / config sketch: [README
 
 Brand string in UI/logs: **`wezai`**. Never introduce third-party product branding in UI strings.
 
+**Install version** is shown in every command-palette title and the AI output-pane banner (also logged on load). Prefer semantic-release `package.json` version; append a 7-char git sha when available so `update_all` pulls on `main` are visible between releases. Format via `util.brand_with_version()` — e.g. `wezai v1.7.0+fc6d5b5`, or sha-only / `?` if metadata is missing.
+
 ---
 
 ## 2. Install & load
@@ -79,7 +81,7 @@ package.json .releaserc.json renovate.json
 .github/workflows/renovate.yml
 ```
 
-Node/`package.json` is **only** for semantic-release (not a runtime dependency of the Lua plugin).
+Node/`package.json` is for semantic-release tooling. At runtime the Lua plugin also reads `version` from it (when present in the install checkout) to label palettes and the AI pane.
 
 ---
 
@@ -364,7 +366,7 @@ For `http` + Ollama: pick an **instruct** model that obeys §4.4; set a high `ti
 
 ## 9. Bootstrap / module path
 
-WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scanning `wezterm.plugin.list()` for fingerprint files (`settings.lua`, `stats.lua`, `providers/init.lua`, `palette.lua`). Among matches it **prefers the most complete install** (counts `git.lua` / `kube.lua` / `tf.lua` / …) so a stale local checkout cannot shadow an updated GitHub cache that has newer catalogs. Local/`wsams` paths win only as a tie-breaker. Then extends `package.path` for `?.lua` and `?/init.lua`. `@tf` is soft-required — a missing `tf.lua` logs a warning and disables that catalog instead of failing the whole plugin.
+WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scanning `wezterm.plugin.list()` for fingerprint files (`settings.lua`, `stats.lua`, `providers/init.lua`, `palette.lua`). Among matches it **prefers the most complete install** (counts `git.lua` / `kube.lua` / `tf.lua` / …) so a stale local checkout cannot shadow an updated GitHub cache that has newer catalogs. Local/`wsams` paths win only as a tie-breaker. Then extends `package.path` for `?.lua` and `?/init.lua`, and passes `plugin_dir` + repo root into `util.set_install_dirs` so `util.version_label()` can read `package.json` / git HEAD. `@tf` is soft-required — a missing `tf.lua` logs a warning and disables that catalog instead of failing the whole plugin.
 
 ---
 
@@ -405,6 +407,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] `@@newfile.txt create lorem` creates file after Apply/Create.
 - [ ] Large `@file` attaches as truncated head+tail, not hard error.
 - [ ] Pick model / palette actions reuse **one** AI pane (no second split).
+- [ ] Palette title and AI pane banner show install version (`wezai v…` / sha).
 - [ ] Fish dialect: no bogus `; end` on one-liners; macOS: no `du --exclude`.
 - [ ] `@git:status` prints in AI pane; mutating git confirms.
 - [ ] `@kube:pods` shows current ns (or “(no resources…)”); kubectl found even when WezTerm was Dock-launched.
@@ -441,6 +444,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 | `@` parsing / prepare / attach errors | `plugin/context.lua` |
 | `run_cmd` / `resolve_executable` | `plugin/util.lua` |
 | Pane / UI | `plugin/ui.lua` |
+| Install version label | `plugin/util.lua` (`version_label` / `brand_with_version`) |
 | Providers | `plugin/providers/` |
 | Git / Kube / Terraform catalogs | `plugin/git.lua`, `plugin/kube.lua`, `plugin/tf.lua` |
 | Kube ns / kubectl bin / attach | `plugin/kube.lua` (`resolve_namespace`, `kubectl_bin`, `collect_attach`) |

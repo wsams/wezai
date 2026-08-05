@@ -4,6 +4,7 @@ local action = wezterm.action
 -- WezTerm has no debug.getinfo; discover our plugin/ dir by fingerprint.
 -- Prefer the most complete install (so a stale local checkout without tf.lua
 -- cannot win over an updated GitHub plugin cache).
+local discovered_plugin_dir, discovered_repo_dir
 do
     local slash = (package.config:sub(1, 1) == "\\") and "\\" or "/"
     local FINGERPRINT = {
@@ -56,7 +57,8 @@ do
 
     local ranked = {}
     for _, plug in ipairs(wezterm.plugin.list()) do
-        local dir = tostring(plug.plugin_dir or "") .. slash .. "plugin" .. slash
+        local repo = tostring(plug.plugin_dir or "")
+        local dir = repo .. slash .. "plugin" .. slash
         local blob = (tostring(plug.component) .. " " .. tostring(plug.url) .. " " .. dir):lower()
         if blob:find("wezai", 1, true) or looks_like_wezai(dir) then
             -- Higher score wins: completeness first, then local / wsams preference.
@@ -69,20 +71,22 @@ do
             ranked[#ranked + 1] = {
                 score = completeness(dir) * 10 + locality,
                 dir = dir,
+                repo = repo,
             }
         end
     end
     table.sort(ranked, function(a, b)
         return a.score > b.score
     end)
-    local root
+    local chosen
     for i = 1, #ranked do
         if looks_like_wezai(ranked[i].dir) then
-            root = ranked[i].dir
+            chosen = ranked[i]
             break
         end
     end
-    root = root or (ranked[1] and ranked[1].dir)
+    chosen = chosen or ranked[1]
+    local root = chosen and chosen.dir
     if root then
         package.path = table.concat({ package.path, root .. "?.lua", root .. "?/init.lua" }, ";")
         local has_tf = file_exists(root .. "tf.lua")
@@ -91,12 +95,17 @@ do
                 .. root
                 .. (has_tf and " (tf.lua ok)" or " (tf.lua MISSING — run wezterm.plugin.update_all() or sync local checkout)")
         )
+        discovered_plugin_dir = root
+        discovered_repo_dir = chosen and chosen.repo
     else
         wezterm.log_warn("wezai: could not locate plugin modules")
     end
 end
 
 local util = require("util")
+if discovered_plugin_dir or discovered_repo_dir then
+    util.set_install_dirs(discovered_plugin_dir, discovered_repo_dir)
+end
 local ui = require("ui")
 local session = require("session")
 local shell = require("shell")
@@ -880,7 +889,8 @@ local function apply_to_config(wezterm_config, user_config)
     end
 
     wezterm.log_info(
-        "wezai loaded model="
+        util.brand_with_version()
+            .. " loaded model="
             .. config.model
             .. " type="
             .. config.type
