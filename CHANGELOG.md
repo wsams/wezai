@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/wsams/wezai/compare/v1.7.0...v1.8.0) (2026-08-05)
+
+
+### Features
+
+* show install version in palettes and AI pane ([#17](https://github.com/wsams/wezai/issues/17)) ([51a6627](https://github.com/wsams/wezai/commit/51a6627267e68d0d4275a81dba09cbef45faf0ae))
+
 # [1.7.0](https://github.com/wsams/wezai/compare/v1.6.2...v1.7.0) (2026-08-05)
 
 
