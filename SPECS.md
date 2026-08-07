@@ -130,6 +130,8 @@ Parsing (`util.parse_json_response`): try raw → fenced body → fence-stripped
 ### 4.4.1 HTTP `timeout` (local LLMs)
 
 `timeout` (seconds) maps to curl `--max-time` (default **120**). Cloud chat APIs usually finish sooner. Local OpenAI-compatible servers (notably **Ollama**) may send **no response bytes** until the model runner finishes loading and warmup. If the client disconnects mid-load, Ollama aborts the load (`client connection closed before llama-server finished loading`), so the model never stays warm and every attempt looks cold. For large local models set `timeout` to **300–600**, or pre-warm the model. Transport errors that look like curl timeouts get an explanatory hint from `providers.chat_http`.
+
+While Ask/Edit wait, `ui.start_progress` (when `show_loading` is true) scrolls status lines in the AI pane: model + endpoint, elapsed vs timeout with %, remaining time, and rotating phase hints (cold load / warmup / approaching timeout). Pulses use `wezterm.time.call_after` so they keep printing during long `run_child_process` yields.
 ### 4.5 Dialect + platform injection
 
 On every ask (`with_dialect` in `init.lua`):
@@ -335,6 +337,7 @@ Important fields (see `settings.lua` for full defaults):
 | Key | Role |
 |-----|------|
 | `type`, `model`, `models`, `api_url`, `api_key`, `headers`, `timeout` | Provider (`timeout` default 120s; raise for cold local loads — §4.4.1) |
+| `show_loading` | When true (default), Ask/Edit scroll timed status in the AI pane while waiting (model, endpoint, elapsed/timeout %, phase hints). Set `false` to silence. |
 | `ollama_path`, `lms_path` | CLI backends |
 | `system_prompt` | Style; dialect/OS appended per request; JSON contract appended if needed |
 | `max_file_bytes`, `files.*` | Attach budget + large-file policy |
@@ -419,6 +422,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] Stats banner/line appears; `~/.local/share/wezai/stats.json` updates.
 - [ ] Git/kube/tf/history always use shell cwd (not AI pane).
 - [ ] Local Ollama HTTP: with an unloaded large model, `timeout` ≥ load+warmup still returns JSON (not curl 28 / 0 bytes); second Ask is fast while model stays loaded.
+- [ ] During a multi-minute Ask wait, AI pane scrolls progress with model/endpoint, elapsed vs timeout %, and rotating hints (not only a bare “thinking…” line).
 - [ ] Chatty model wrapping JSON in prose still parses via `extract_json_object` when a single object is present.
 - [ ] `@@` edit accepting `content` alias when `file` is missing still shows diff confirm (diff visible inside the overlay).
 - [ ] Apply writes `<file>.<YYYYMMDD-HHMMSS>.wezai.bak`; `backup.enabled = false` skips bak and Undo still works; `backup.dir` relocates bak files.

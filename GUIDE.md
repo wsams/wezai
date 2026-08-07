@@ -9,7 +9,7 @@ Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `
 | Pane | Role |
 |------|------|
 | **Left (shell)** | Your real terminal. cwd, git repo, commands you run. Stay focused here. |
-| **Right (wezai)** | Output only — answers, diffs, `git status`, terraform validate, progress. Not a shell. |
+| **Right (wezai)** | Output only — answers, diffs, `git status`, terraform validate, progress. Not a shell. While Ask/Edit waits on a slow/local model, this pane scrolls timed status (elapsed, timeout %, hints) so long waits stay visible. |
 
 | Entry point | When to use it |
 |-------------|----------------|

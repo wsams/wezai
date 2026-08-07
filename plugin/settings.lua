@@ -26,6 +26,7 @@ local BASE = {
     -- (Ollama aborts the load if the client disconnects mid-warmup). Cloud
     -- APIs usually answer faster; raise further for big local GGUFs.
     timeout = 120,
+    -- Scroll timed status lines in the AI pane while Ask/Edit waits on the model.
     show_loading = true,
     type = "http",
     api_key = nil,
