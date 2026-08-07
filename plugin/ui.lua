@@ -613,33 +613,145 @@ function M.ai_print(ai_pane, text, kind)
     wezterm.log_error("wezai: ai_print could not deliver output")
 end
 
+local function fmt_duration(sec)
+    sec = math.max(0, math.floor(tonumber(sec) or 0))
+    if sec < 60 then
+        return tostring(sec) .. "s"
+    end
+    local minutes = math.floor(sec / 60)
+    local rem = sec % 60
+    if minutes < 60 then
+        return string.format("%dm %02ds", minutes, rem)
+    end
+    local hours = math.floor(minutes / 60)
+    minutes = minutes % 60
+    return string.format("%dh %02dm %02ds", hours, minutes, rem)
+end
+
+local function provider_endpoint(config)
+    local kind = (config and config.type) or "http"
+    if kind == "http" then
+        local url = config and config.api_url
+        if type(url) == "string" and url ~= "" then
+            local host = url:match("^https?://([^/]+)")
+            if host then
+                return "http @" .. host
+            end
+        end
+        return "http"
+    end
+    if kind == "ollama" then
+        return "ollama CLI"
+    end
+    if kind == "local" then
+        return "lms CLI"
+    end
+    if kind == "google" then
+        return "google"
+    end
+    return tostring(kind)
+end
+
+local function progress_hint(elapsed, timeout, kind, pulse_n)
+    local budget = tonumber(timeout) or 120
+    local hints
+    if kind == "http" or kind == "ollama" or kind == "local" then
+        if elapsed < 15 then
+            hints = {
+                "request in flight",
+                "waiting for first bytes",
+                "provider has not replied yet",
+            }
+        elseif elapsed < 45 then
+            hints = {
+                "local models often load cold on first ask",
+                "runner may still be warming up",
+                "no reply yet — this can take a minute",
+            }
+        elseif elapsed < math.max(90, budget * 0.75) then
+            hints = {
+                "long wait is normal for large GGUFs",
+                "still waiting on the model",
+                "keep this pane open — request is live",
+                "cold load + first tokens can take several minutes",
+            }
+        else
+            hints = {
+                "approaching timeout — raise config.timeout if loads are cold",
+                "near timeout; a mid-load disconnect aborts Ollama warmup",
+                "still waiting — consider pre-warming the model",
+            }
+        end
+    else
+        if elapsed < budget * 0.75 then
+            hints = {
+                "waiting for provider reply",
+                "request still in flight",
+                "no reply yet",
+            }
+        else
+            hints = {
+                "approaching timeout — raise config.timeout if needed",
+                "still waiting on the provider",
+            }
+        end
+    end
+    return hints[((pulse_n - 1) % #hints) + 1]
+end
+
 function M.start_progress(ai_pane, config)
+    config = config or {}
     if config.show_loading == false then
         return { stop = function() end }
     end
-    local state = { done = false, started = os.time() }
-    M.ai_print(ai_pane, "thinking…", "status")
+    local timeout = tonumber(config.timeout) or 120
+    local model = (type(config.model) == "string" and config.model ~= "" and config.model) or "model?"
+    local kind = config.type or "http"
+    local endpoint = provider_endpoint(config)
+    local state = { done = false, started = os.time(), pulse_n = 0 }
+    local interval = 2.5
+
+    M.ai_print(
+        ai_pane,
+        string.format("thinking…  %s via %s  timeout %s", model, endpoint, fmt_duration(timeout)),
+        "status"
+    )
 
     local function pulse()
         if state.done then
             return
         end
+        state.pulse_n = state.pulse_n + 1
         local elapsed = os.time() - state.started
-        M.ai_print(ai_pane, "still thinking (" .. elapsed .. "s)", "status")
+        local left = math.max(0, timeout - elapsed)
+        local pct = timeout > 0 and math.min(100, math.floor((elapsed * 100) / timeout)) or 0
+        local hint = progress_hint(elapsed, timeout, kind, state.pulse_n)
+        M.ai_print(
+            ai_pane,
+            string.format(
+                "… %s / %s (%d%%) · %s left — %s",
+                fmt_duration(elapsed),
+                fmt_duration(timeout),
+                pct,
+                fmt_duration(left),
+                hint
+            ),
+            "status"
+        )
         if wezterm.time and wezterm.time.call_after then
-            wezterm.time.call_after(3.0, pulse)
+            wezterm.time.call_after(interval, pulse)
         end
     end
 
     if wezterm.time and wezterm.time.call_after then
-        wezterm.time.call_after(3.0, pulse)
+        wezterm.time.call_after(interval, pulse)
     end
 
     return {
         stop = function()
             state.done = true
             local elapsed = os.time() - state.started
-            M.ai_print(ai_pane, "done (" .. elapsed .. "s)", "status")
+            M.ai_print(ai_pane, "done (" .. fmt_duration(elapsed) .. ")", "status")
         end,
     }
 end
