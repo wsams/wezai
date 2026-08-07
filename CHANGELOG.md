@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/wsams/wezai/compare/v1.8.0...v1.9.0) (2026-08-07)
+
+
+### Features
+
+* **ui:** scroll richer status while Ask/Edit waits ([#18](https://github.com/wsams/wezai/issues/18)) ([a696bb4](https://github.com/wsams/wezai/commit/a696bb43ce832f335511ae35011ee75575f2c3ef))
+
 # [1.8.0](https://github.com/wsams/wezai/compare/v1.7.0...v1.8.0) (2026-08-05)
 
 
