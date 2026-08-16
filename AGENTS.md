@@ -19,14 +19,25 @@ Do **not** use `CTRL+SHIFT+T` (or `key = "t", mods = "CTRL|SHIFT"`) for wezai �
 - Terraform palette default is **`CTRL+ALT+T`** (`keybinding_tf` in `settings.lua`).
 - If you add another `T`-based binding, keep it off `CTRL|SHIFT`.
 
-Other WezTerm defaults to treat carefully when picking shortcuts (non-exhaustive): `CTRL+SHIFT+W` (close tab), `CTRL+SHIFT+F` (search), `CTRL+SHIFT+P` (wezai already overrides for its palette — do not casually reassign).
+### `CTRL+SHIFT+W` is reserved
+
+| Shortcut | Owner | Meaning |
+|----------|--------|---------|
+| **`CTRL+SHIFT+W`** | **WezTerm (reserved)** | **`CloseCurrentTab`** |
+
+Do **not** use `CTRL+SHIFT+W` (or `key = "w", mods = "CTRL|SHIFT"`) for wezai — including `@weather`.
+
+- Weather palette default is **`CTRL+ALT+W`** (`keybinding_weather` in `settings.lua`).
+- If you add another `W`-based binding, keep it off `CTRL|SHIFT`.
+
+Other WezTerm defaults to treat carefully when picking shortcuts (non-exhaustive): `CTRL+SHIFT+F` (search), `CTRL+SHIFT+P` (wezai already overrides for its palette — do not casually reassign).
 
 ---
 
 ## Keybinding checklist (before shipping a new shortcut)
 
 1. Check [WezTerm default keys](https://wezterm.org/config/default-keys.html) for conflicts.
-2. Prefer `CTRL|SHIFT` + a free letter for catalog scopes (`G` git, `K` kube, `H` history) — **not `T`**.
+2. Prefer `CTRL|SHIFT` + a free letter for catalog scopes (`G` git, `K` kube, `H` history) — **not `T`** (SpawnTab) or **`W`** (CloseCurrentTab).
 3. Update `settings.lua` defaults, `init.lua` bind site, and README / GUIDE / SPECS tables together.
 4. Call out any intentional override of a WezTerm default in those docs.
 
@@ -65,6 +76,6 @@ Raise `timeout` to **300–600** for big local GGUFs, or pre-warm (`ollama run �
 
 ## Related pitfalls
 
-- Plugin modules load via fingerprint scan in `init.lua`. Prefer the **most complete** install (`tf.lua`, etc.) so a stale local checkout cannot hide new catalogs.
-- After merging catalog work to GitHub installs: users need `wezterm.plugin.update_all()` + config reload. Log line should include `tf.lua ok` when present.
+- Plugin modules load via fingerprint scan in `init.lua`. Prefer the **most complete** install (`tf.lua`, `weather.lua`, etc.) so a stale local checkout cannot hide new catalogs.
+- After merging catalog work to GitHub installs: users need `wezterm.plugin.update_all()` + config reload. Log line should include `tf.lua ok` / `weather.lua ok` when present.
 - Shell vs AI pane, provider contract, and safety rules: see SPECS §4.

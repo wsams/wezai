@@ -16,10 +16,10 @@ User-facing walkthroughs: [GUIDE.md](GUIDE.md). Install / config sketch: [README
 
 **wezai** is a WezTerm plugin that puts an AI assistant and utility catalogs next to the user’s shell:
 
-- **Ask** — natural-language CLI help with attachable context (`@file`, selection, git, kube, tf, history).
+- **Ask** — natural-language CLI help with attachable context (`@file`, selection, git, kube, tf, weather, history).
 - **Edit** — one-shot file create/rewrite via `@@path` with unified diff + confirm.
-- **Palette** — fuzzy `InputSelector` (`CTRL+SHIFT+P`) for Ask helpers, `@git`, `@kube`, `@tf`, `@history`.
-- **AI output pane** — right-side keep-alive pane for answers, diffs, git/kube/tf show output (not for running shell/git).
+- **Palette** — fuzzy `InputSelector` (`CTRL+SHIFT+P`) for Ask helpers, `@git`, `@kube`, `@tf`, `@weather`, `@history`.
+- **AI output pane** — right-side keep-alive pane for answers, diffs, git/kube/tf/weather show output (not for running shell/git).
 - **Safety** — secret redaction, risky-command confirms, mutate confirms for git/kube/tf/edit.
 
 Brand string in UI/logs: **`wezai`**. Never introduce third-party product branding in UI strings.
@@ -54,7 +54,7 @@ Public entrypoint: `plugin/init.lua` → `apply_to_config(wezterm_config, user_c
 ```
 plugin/
   init.lua          -- bootstrap, keybindings, ask/edit orchestration, palette hooks
-  settings.lua      -- defaults + merge (nested tables: ai_pane, history, git, kube, tf, stats, files, backup)
+  settings.lua      -- defaults + merge (nested tables: ai_pane, history, git, kube, tf, weather, stats, files, backup)
   util.lua          -- paths, files, JSON parse, run_cmd (pcall), resolve_executable, large-file read
   ui.lua            -- AI pane lifecycle, styling, InputSelector, usage banner
   session.lua       -- per-tab chat memory + history events + last edit
@@ -66,6 +66,7 @@ plugin/
   git.lua           -- @git action catalog
   kube.lua          -- @kube action catalog
   tf.lua            -- @tf terraform action catalog
+  weather.lua       -- @weather Open-Meteo catalog (zip overlay)
   palette.lua       -- unified CTRL+SHIFT+P palette
   stats.lua         -- persistent token/model usage DB
   providers/
@@ -178,6 +179,7 @@ Supports:
 | `@git` / `@git:id` | Git picker or action (see §5.4) |
 | `@kube` / `@kube:id` / `@kube:pods/<ns>` | Kube picker, action, or attach with optional ns (see §5.5) |
 | `@tf` / `@tf:id` / `@terraform:id` | Terraform picker, action, or attach (see §5.6) |
+| `@weather` / `@weather:id` | Weather picker, current/forecast, or attach (see §5.9) |
 | `@history` / bare history ref | History palette / attach |
 | `@dir:path` | Shallow directory listing |
 
@@ -197,10 +199,11 @@ Supports:
 
 Unified fuzzy `InputSelector` with scopes:
 
-- full (Ask helpers + git + kube + tf + history rows)
+- full (Ask helpers + git + kube + tf + weather + history rows)
 - `git` (`CTRL+SHIFT+G`)
 - `kube` (`CTRL+SHIFT+K`)
 - `tf` (`CTRL+ALT+T` — not `CTRL+SHIFT+T`, which is WezTerm SpawnTab)
+- `weather` (`CTRL+ALT+W` — not `CTRL+SHIFT+W`, which is WezTerm CloseCurrentTab)
 - `history` (`CTRL+SHIFT+H`) and filtered history scopes
 
 Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, Attach/Edit file (fuzzy), Undo edit, Copy last command, Shorter re-ask, Pick model, Clear chat memory.
@@ -308,6 +311,40 @@ Supported synthetics:
 
 Per-tab: chat turns (capped by `chat_max_turns`), last question/command, last edit (for undo), history events.
 
+### 5.9 `@weather` catalog (`weather.lua`)
+
+Kinds: `show` (print in AI pane), `shell` (prompt / persist zip). No model. Forecast from **Open-Meteo** (no API key). ZIP / postal codes geocode via Zippopotam.us, then Open-Meteo geocoding, then Nominatim.
+
+#### Zip resolution
+
+1. Plugin overlay `~/.local/share/wezai/weather.json` (`weather.path` override) when `@weather:zip` has saved a zip.
+2. Else `weather.zip` / `weather.country` from `apply_to_config`.
+
+`@weather:zip` **does not rewrite** `wezterm.lua`. It writes the overlay so the zip can be changed from the palette without editing config. `@weather:zip clear` (or `none`) drops the overlay; the wezterm.lua value applies again. Coords are cached in the same JSON.
+
+`weather.units`: `"auto"` (US → imperial °F/mph/in; otherwise metric), `"imperial"`, or `"metric"`. Default country `"US"`.
+
+#### Invocation forms
+
+| Form | Meaning |
+|------|---------|
+| `@weather` / `@weather:` | Open weather palette |
+| `@weather:now` | Current conditions + next hours + today/tomorrow (AI pane) |
+| `@weather:forecast` | Current + 7-day daily |
+| `@weather:zip` / `@weather:zip 90210` | Prompt or set zip (optional `, US` / trailing ISO country) |
+| `@weather:where` | Show effective zip, overlay vs wezterm.lua, resolved place |
+| `@weather should I bring a jacket?` | Attach current weather + ask |
+| `@weather:forecast what’s the weekend look like?` | Attach 7-day + ask |
+
+#### Catalog kinds
+
+- Show: `now` (`current` alias), `forecast`, `where`.
+- Shell: `zip` — persist overlay; extra is the postal code.
+
+#### Ask attach tokens
+
+- `@weather`, `@weather:now`, `@weather:forecast`
+
 ---
 
 ## 6. Default keybindings
@@ -321,8 +358,9 @@ Per-tab: chat turns (capped by `chat_max_turns`), last question/command, last ed
 | Git scope | `CTRL\|SHIFT+g` | Git palette |
 | Kube scope | `CTRL\|SHIFT+k` | Kube palette |
 | Terraform scope | `CTRL\|ALT+t` | Terraform palette |
+| Weather scope | `CTRL\|ALT+w` | Weather palette |
 
-**Reserved:** `CTRL+SHIFT+T` is WezTerm **`SpawnTab`** — never bind wezai to it. See [AGENTS.md](AGENTS.md).
+**Reserved:** `CTRL+SHIFT+T` is WezTerm **`SpawnTab`** — never bind wezai to it. `CTRL+SHIFT+W` is WezTerm **`CloseCurrentTab`** — weather uses `CTRL+ALT+W`. See [AGENTS.md](AGENTS.md).
 
 Single-letter keys are also bound with opposite case for WezTerm quirks.
 
@@ -330,7 +368,7 @@ Single-letter keys are also bound with opposite case for WezTerm quirks.
 
 ## 7. Configuration surface
 
-Merged in `settings.finalize`. Nested keys deep-merged: `ai_pane`, `history`, `git`, `kube`, `tf`, `stats`, `files`, `backup`.
+Merged in `settings.finalize`. Nested keys deep-merged: `ai_pane`, `history`, `git`, `kube`, `tf`, `weather`, `stats`, `files`, `backup`.
 
 Important fields (see `settings.lua` for full defaults):
 
@@ -346,6 +384,7 @@ Important fields (see `settings.lua` for full defaults):
 | `require_edit_confirm`, `require_risk_confirm` | Safety toggles |
 | `kube.namespace`, `kube.kubectl`, `kube.confirm_mutate`, `kube.max_attach_bytes` | kubectl defaults / binary / attach cap |
 | `tf.terraform`, `tf.confirm_mutate`, `tf.max_attach_bytes` | terraform binary / mutate confirms / attach cap |
+| `weather.zip`, `weather.country`, `weather.units`, `weather.path` | Open-Meteo location (plugin `@weather:zip` overlay beats `zip`) |
 | `git.default_branch`, `git.confirm_push`, `git.max_attach_bytes` | git catalog |
 | `history.*` | Shell/session history limits |
 | `stats.*` | Usage DB |
@@ -369,7 +408,7 @@ For `http` + Ollama: pick an **instruct** model that obeys §4.4; set a high `ti
 
 ## 9. Bootstrap / module path
 
-WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scanning `wezterm.plugin.list()` for fingerprint files (`settings.lua`, `stats.lua`, `providers/init.lua`, `palette.lua`). Among matches it **prefers the most complete install** (counts `git.lua` / `kube.lua` / `tf.lua` / …) so a stale local checkout cannot shadow an updated GitHub cache that has newer catalogs. Local/`wsams` paths win only as a tie-breaker. Then extends `package.path` for `?.lua` and `?/init.lua`, and passes `plugin_dir` + repo root into `util.set_install_dirs` so `util.version_label()` can read `package.json` / git HEAD. `@tf` is soft-required — a missing `tf.lua` logs a warning and disables that catalog instead of failing the whole plugin.
+WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scanning `wezterm.plugin.list()` for fingerprint files (`settings.lua`, `stats.lua`, `providers/init.lua`, `palette.lua`). Among matches it **prefers the most complete install** (counts `git.lua` / `kube.lua` / `tf.lua` / `weather.lua` / …) so a stale local checkout cannot shadow an updated GitHub cache that has newer catalogs. Local/`wsams` paths win only as a tie-breaker. Then extends `package.path` for `?.lua` and `?/init.lua`, and passes `plugin_dir` + repo root into `util.set_install_dirs` so `util.version_label()` can read `package.json` / git HEAD. `@tf` and `@weather` are soft-required — a missing `tf.lua` / `weather.lua` logs a warning and disables that catalog instead of failing the whole plugin.
 
 ---
 
@@ -419,8 +458,10 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] `@kube:use-ns myns` / `@kube:diagnose`; mutates confirm.
 - [ ] `@tf:validate` prints in AI pane; `@tf:plan` runs in shell; `@tf:apply` confirms.
 - [ ] `@tf:generate …` / `@tf:debug` use the model; attach `@tf:state what’s orphaned?` works.
+- [ ] `@weather:zip 90210` persists overlay; `@weather:now` prints Open-Meteo in the AI pane; `@weather:zip clear` falls back to `weather.zip`.
+- [ ] Ask `@weather should I bring a jacket?` attaches current conditions (needs a zip).
 - [ ] Stats banner/line appears; `~/.local/share/wezai/stats.json` updates.
-- [ ] Git/kube/tf/history always use shell cwd (not AI pane).
+- [ ] Git/kube/tf/weather/history always use shell cwd (not AI pane).
 - [ ] Local Ollama HTTP: with an unloaded large model, `timeout` ≥ load+warmup still returns JSON (not curl 28 / 0 bytes); second Ask is fast while model stays loaded.
 - [ ] During a multi-minute Ask wait, AI pane scrolls progress with model/endpoint, elapsed vs timeout %, and rotating hints (not only a bare “thinking…” line).
 - [ ] Chatty model wrapping JSON in prose still parses via `extract_json_object` when a single object is present.
@@ -451,6 +492,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 | Install version label | `plugin/util.lua` (`version_label` / `brand_with_version`) |
 | Providers | `plugin/providers/` |
 | Git / Kube / Terraform catalogs | `plugin/git.lua`, `plugin/kube.lua`, `plugin/tf.lua` |
+| Weather / zip overlay | `plugin/weather.lua` (`set_zip`, `resolved_location`, `collect_attach`) |
 | Kube ns / kubectl bin / attach | `plugin/kube.lua` (`resolve_namespace`, `kubectl_bin`, `collect_attach`) |
 | Terraform bin / attach / AI | `plugin/tf.lua` (`terraform_bin`, `collect_attach`, `generate`/`debug`) |
 | Fuzzy files | `plugin/files.lua` |
