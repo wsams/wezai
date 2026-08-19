@@ -24,7 +24,7 @@ User-facing walkthroughs: [GUIDE.md](GUIDE.md). Install / config sketch: [README
 
 Brand string in UI/logs: **`wezai`**. Never introduce third-party product branding in UI strings.
 
-**Install version** is shown in every command-palette title and the AI output-pane banner (also logged on load). Prefer semantic-release `package.json` version; append a 7-char git sha when available so `update_all` pulls on `main` are visible between releases. Format via `util.brand_with_version()` — e.g. `wezai v1.7.0+fc6d5b5`, or sha-only / `?` if metadata is missing.
+**Install version** is shown in every command-palette title and the AI output-pane banner (also logged on load). Prefer bundled `plugin/version.lua` (kept in sync with semantic-release / `package.json`) so Flatpak/Bazzite installs still show a semver when `package.json` sits outside the Lua dir. Append a 7-char git sha when `.git` is visible so `update_all` pulls on `main` are visible between releases. Format via `util.brand_with_version()` — e.g. `wezai v1.10.0+fc6d5b5`. Last resort is `dev`, never a bare `?`.
 
 ---
 
@@ -36,14 +36,16 @@ local wezai = wezterm.plugin.require("https://github.com/wsams/wezai")
 -- Local checkout (preferred while developing — avoids update_all clobbering unreleased fixes):
 -- local wezai = wezterm.plugin.require("/absolute/path/to/wezai")
 
-wezai.apply_to_config(config, { --[[ user options ]] })
-
--- Optional: pull remote into the plugin cache. Do **not** leave this on every reload
--- while iterating on a local checkout — it overwrites the cached copy from GitHub.
--- wezterm.plugin.update_all()
+wezai.apply_to_config(config)
+-- Optional Lua table still wins over wezai.env / process env:
+-- wezai.apply_to_config(config, { model = "qwen2.5:14b" })
 ```
 
-WezTerm stores plugins under its plugin cache (encoded URLs / paths). After editing a **GitHub-required** install: sync the working tree into that cache dir **or** run `update_all()` once, then reload config. For day-to-day Lua work, `plugin.require("/absolute/path/…")` and skip `update_all()`.
+User customizations (provider, weather zip, kube ns, …) belong in **`~/.config/wezterm/wezai.env`** (see [wezai.env.example](wezai.env.example)). GUI/Flatpak WezTerm often does not inherit `.bashrc` environment.
+
+To refresh a **GitHub** install: command palette → **Update wezai plugin** (`wezterm.plugin.update_all()` + `wezterm.reload_configuration()`). Do **not** call those at config file scope — `reload_configuration()` loops, and `update_all()` overwrites a local checkout. Debug Overlay remains an optional alternative.
+
+WezTerm stores plugins under its plugin cache (encoded URLs / paths). After editing a **GitHub-required** install: use the palette update action, or sync the working tree into that cache dir, then reload. For day-to-day Lua work, `plugin.require("/absolute/path/…")` and skip `update_all()`.
 
 Public entrypoint: `plugin/init.lua` → `apply_to_config(wezterm_config, user_config)`.
 
@@ -54,8 +56,9 @@ Public entrypoint: `plugin/init.lua` → `apply_to_config(wezterm_config, user_c
 ```
 plugin/
   init.lua          -- bootstrap, keybindings, ask/edit orchestration, palette hooks
-  settings.lua      -- defaults + merge (nested tables: ai_pane, history, git, kube, tf, weather, stats, files, backup)
-  util.lua          -- paths, files, JSON parse, run_cmd (pcall), resolve_executable, large-file read
+  settings.lua      -- defaults + wezai.env / process env / user merge
+  version.lua       -- bundled semver for UI (semantic-release writes this)
+  util.lua          -- paths, files, JSON parse, run_cmd (pcall), resolve_executable, large-file read, version_label
   ui.lua            -- AI pane lifecycle, styling, InputSelector, usage banner
   session.lua       -- per-tab chat memory + history events + last edit
   shell.lua         -- shell detect, OS platform hint, risk gate, clipboard, send_command
@@ -76,13 +79,13 @@ plugin/
     gemini_api.lua  -- Google Gemini generateContent
     ollama_bin.lua  -- ollama CLI
     lms_bin.lua     -- LM Studio `lms` CLI
-README.md GUIDE.md SPECS.md AGENTS.md LICENSE
+README.md GUIDE.md SPECS.md AGENTS.md LICENSE wezai.env.example
 package.json .releaserc.json renovate.json
 .github/workflows/release.yml
 .github/workflows/renovate.yml
 ```
 
-Node/`package.json` is for semantic-release tooling. At runtime the Lua plugin also reads `version` from it (when present in the install checkout) to label palettes and the AI pane.
+Node/`package.json` is for semantic-release tooling. At runtime the Lua plugin prefers `plugin/version.lua` (always on the Lua path) and walks up from the plugin dir for `package.json` / git HEAD when labeling palettes and the AI pane.
 
 ---
 
@@ -130,7 +133,7 @@ Parsing (`util.parse_json_response`): try raw → fenced body → fence-stripped
 
 ### 4.4.1 HTTP `timeout` (local LLMs)
 
-`timeout` (seconds) maps to curl `--max-time` (default **120**). Cloud chat APIs usually finish sooner. Local OpenAI-compatible servers (notably **Ollama**) may send **no response bytes** until the model runner finishes loading and warmup. If the client disconnects mid-load, Ollama aborts the load (`client connection closed before llama-server finished loading`), so the model never stays warm and every attempt looks cold. For large local models set `timeout` to **300–600**, or pre-warm the model. Transport errors that look like curl timeouts get an explanatory hint from `providers.chat_http`.
+`timeout` (seconds) maps to curl `--max-time` (default **300**, sized for local Ollama cold loads). Cloud chat APIs usually finish sooner — set `WEZAI_TIMEOUT` or `timeout` lower if you want a tighter cap. Local OpenAI-compatible servers (notably **Ollama**) may send **no response bytes** until the model runner finishes loading and warmup. If the client disconnects mid-load, Ollama aborts the load (`client connection closed before llama-server finished loading`), so the model never stays warm and every attempt looks cold. For large local models set `timeout` to **300–600**, or pre-warm the model. Transport errors that look like curl timeouts get an explanatory hint from `providers.chat_http`.
 
 While Ask/Edit wait, `ui.start_progress` (when `show_loading` is true) scrolls status lines in the AI pane: model + endpoint, elapsed vs timeout with %, remaining time, and rotating phase hints (cold load / warmup / approaching timeout). Pulses use `wezterm.time.call_after` so they keep printing during long `run_child_process` yields.
 ### 4.5 Dialect + platform injection
@@ -351,9 +354,9 @@ Kinds: `show` (print in AI pane), `shell` (prompt / persist zip). No model. Fore
 
 | Binding | Default | Action |
 |---------|---------|--------|
-| Ask | `SUPER+i` | Prompt (users often set `CTRL+i`) |
-| Ask + pane history | `SUPER+I` | Prompt with scrollback |
-| Palette | `CTRL\|SHIFT+p` | Full palette |
+| Ask | `CTRL+i` | Prompt (set `SUPER` in Lua if you want Cmd+I on macOS) |
+| Ask + pane history | `CTRL+SHIFT+e` | Prompt with scrollback |
+| Palette | `CTRL\|SHIFT+p` | Full palette (includes **Update wezai plugin**) |
 | History scope | `CTRL\|SHIFT+h` | History palette |
 | Git scope | `CTRL\|SHIFT+g` | Git palette |
 | Kube scope | `CTRL\|SHIFT+k` | Kube palette |
@@ -368,23 +371,27 @@ Single-letter keys are also bound with opposite case for WezTerm quirks.
 
 ## 7. Configuration surface
 
-Merged in `settings.finalize`. Nested keys deep-merged: `ai_pane`, `history`, `git`, `kube`, `tf`, `weather`, `stats`, `files`, `backup`.
+Merged in `settings.finalize`. Order: **BASE defaults** < **`wezai.env` file** < **process environment** < **`apply_to_config` table**. Nested keys deep-merged: `ai_pane`, `history`, `git`, `kube`, `tf`, `weather`, `stats`, `files`, `backup`.
+
+Env file (first existing): `$WEZAI_ENV_FILE`, `$XDG_CONFIG_HOME/wezterm/wezai.env`, `~/.config/wezterm/wezai.env`, `~/.local/share/wezai/wezai.env`. Simple `KEY=VALUE` (`#` comments, optional `export`, quotes). GUI/Flatpak often has no shell env — the file is the supported path for secrets and zip/model.
+
+Copy-paste BASE (no env, no Lua table): `type=http`, Ollama `api_url`, `model=llama3.2`, `timeout=300`, Ask `CTRL+I`.
 
 Important fields (see `settings.lua` for full defaults):
 
 | Key | Role |
 |-----|------|
-| `type`, `model`, `models`, `api_url`, `api_key`, `headers`, `timeout` | Provider (`timeout` default 120s; raise for cold local loads — §4.4.1) |
+| `type`, `model`, `models`, `api_url`, `api_key`, `headers`, `timeout` | Provider (`timeout` default 300s; raise further for huge local loads — §4.4.1). Env: `WEZAI_TYPE`, `WEZAI_MODEL`, `WEZAI_MODELS`, `WEZAI_API_URL`, `WEZAI_API_KEY` (`OPENAI_API_KEY` / `GEMINI_API_KEY` fallback), `WEZAI_TIMEOUT` |
 | `show_loading` | When true (default), Ask/Edit scroll timed status in the AI pane while waiting (model, endpoint, elapsed/timeout %, phase hints). Set `false` to silence. |
-| `ollama_path`, `lms_path` | CLI backends |
+| `ollama_path`, `lms_path` | CLI backends (`WEZAI_OLLAMA_PATH`, `WEZAI_LMS_PATH`) |
 | `system_prompt` | Style; dialect/OS appended per request; JSON contract appended if needed |
 | `max_file_bytes`, `files.*` | Attach budget + large-file policy |
 | `ai_pane.*` | Split direction/size/pad |
 | `backup.enabled`, `backup.suffix`, `backup.dir` | Edit backups (default on; suffix `.wezai.bak`; `dir` nil = alongside file). `backup = false` disables. Legacy `backup_suffix` still maps to `backup.suffix` |
 | `require_edit_confirm`, `require_risk_confirm` | Safety toggles |
-| `kube.namespace`, `kube.kubectl`, `kube.confirm_mutate`, `kube.max_attach_bytes` | kubectl defaults / binary / attach cap |
+| `kube.namespace`, `kube.kubectl`, `kube.confirm_mutate`, `kube.max_attach_bytes` | kubectl defaults / binary / attach cap (`WEZAI_KUBE_NS`) |
 | `tf.terraform`, `tf.confirm_mutate`, `tf.max_attach_bytes` | terraform binary / mutate confirms / attach cap |
-| `weather.zip`, `weather.country`, `weather.units`, `weather.path` | Open-Meteo location (plugin `@weather:zip` overlay beats `zip`) |
+| `weather.zip`, `weather.country`, `weather.units`, `weather.path` | Open-Meteo location (plugin `@weather:zip` overlay beats `zip` / `WEZAI_WEATHER_ZIP`) |
 | `git.default_branch`, `git.confirm_push`, `git.max_attach_bytes` | git catalog |
 | `history.*` | Shell/session history limits |
 | `stats.*` | Usage DB |
@@ -408,7 +415,7 @@ For `http` + Ollama: pick an **instruct** model that obeys §4.4; set a high `ti
 
 ## 9. Bootstrap / module path
 
-WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scanning `wezterm.plugin.list()` for fingerprint files (`settings.lua`, `stats.lua`, `providers/init.lua`, `palette.lua`). Among matches it **prefers the most complete install** (counts `git.lua` / `kube.lua` / `tf.lua` / `weather.lua` / …) so a stale local checkout cannot shadow an updated GitHub cache that has newer catalogs. Local/`wsams` paths win only as a tie-breaker. Then extends `package.path` for `?.lua` and `?/init.lua`, and passes `plugin_dir` + repo root into `util.set_install_dirs` so `util.version_label()` can read `package.json` / git HEAD. `@tf` and `@weather` are soft-required — a missing `tf.lua` / `weather.lua` logs a warning and disables that catalog instead of failing the whole plugin.
+WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scanning `wezterm.plugin.list()` for fingerprint files (`settings.lua`, `stats.lua`, `providers/init.lua`, `palette.lua`). Each listed `plugin_dir` is tried as **clone-root/`plugin/`** and as **the Lua dir itself** (Flatpak/Bazzite sometimes report the latter). Among matches it **prefers the most complete install** (counts `git.lua` / `kube.lua` / `tf.lua` / `weather.lua` / `version.lua` / …) so a stale local checkout cannot shadow an updated GitHub cache that has newer catalogs. Local/`wsams` paths win only as a tie-breaker. Then extends `package.path` for `?.lua` and `?/init.lua`, and passes `plugin_dir` + repo root into `util.set_install_dirs` so `util.version_label()` can `require("version")` and walk up for `package.json` / git HEAD. `@tf` and `@weather` are soft-required — a missing `tf.lua` / `weather.lua` logs a warning and disables that catalog instead of failing the whole plugin.
 
 ---
 
@@ -417,7 +424,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 ### semantic-release (direct npm — not a third-party GitHub Action wrapper)
 
 - Workflow: `.github/workflows/release.yml` on push to `main`.
-- Config: `.releaserc.json` — changelog + version bump in git + GitHub Release; **`npmPublish: false`**.
+- Config: `.releaserc.json` — changelog + version bump in git + GitHub Release; **`npmPublish: false`**. `@semantic-release/exec` writes `plugin/version.lua` during prepare so WezTerm installs that cannot see `package.json` still show a semver.
 - Conventional Commits required (`feat:`, `fix:`, `BREAKING CHANGE`, etc.).
 - Node: `^22.14.0 || >=24.10.0`.
 
@@ -435,7 +442,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 2. Match existing Lua style (local modules, small helpers, `wezterm.log_*`).
 3. Do not add unnecessary markdown files; update README/GUIDE/SPECS when user-facing behavior changes.
 4. Prefer established tools (`fd`/`git`/`find`, system `diff -u`, `kubectl`, `terraform`) over reinvention.
-5. Local WezTerm testing: prefer `plugin.require("/absolute/path/to/checkout")` and **do not** call `update_all()` on every reload. If using the GitHub require, sync the working tree into the matching cache dir then reload.
+5. Local WezTerm testing: prefer `plugin.require("/absolute/path/to/checkout")` and **do not** call `update_all()` on every reload. GitHub installs: palette **Update wezai plugin**, or sync the working tree into the matching cache dir then reload.
 6. Multi-return APIs that use an error slot must return **`nil` on success**, never `""` (Lua truthiness).
 7. Never commit secrets (API keys in `wezterm.lua` stay user-local).
 8. UI copy and logs say **wezai**, not other product names.
@@ -449,7 +456,9 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] `@@newfile.txt create lorem` creates file after Apply/Create.
 - [ ] Large `@file` attaches as truncated head+tail, not hard error.
 - [ ] Pick model / palette actions reuse **one** AI pane (no second split).
-- [ ] Palette title and AI pane banner show install version (`wezai v…` / sha).
+- [ ] Palette title and AI pane banner show install version (`wezai v…` / sha), never `wezai ?` when `plugin/version.lua` is present.
+- [ ] `wezai.apply_to_config(config)` with no table binds keys using Ollama HTTP defaults; `wezai.env` / `WEZAI_*` overlay model, zip, and keys.
+- [ ] Palette **Update wezai plugin** pulls the GitHub cache and reloads (do not put `update_all()` at config file scope).
 - [ ] Fish dialect: no bogus `; end` on one-liners; macOS: no `du --exclude`.
 - [ ] `@git:status` prints in AI pane; mutating git confirms.
 - [ ] `@kube:pods` shows current ns (or “(no resources…)”); kubectl found even when WezTerm was Dock-launched.
@@ -489,7 +498,8 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 | `@` parsing / prepare / attach errors | `plugin/context.lua` |
 | `run_cmd` / `resolve_executable` | `plugin/util.lua` |
 | Pane / UI | `plugin/ui.lua` |
-| Install version label | `plugin/util.lua` (`version_label` / `brand_with_version`) |
+| Install version label | `plugin/version.lua`, `plugin/util.lua` (`version_label` / `brand_with_version`) |
+| Settings / env overlay | `plugin/settings.lua` (`wezai.env`, `WEZAI_*`) |
 | Providers | `plugin/providers/` |
 | Git / Kube / Terraform catalogs | `plugin/git.lua`, `plugin/kube.lua`, `plugin/tf.lua` |
 | Weather / zip overlay | `plugin/weather.lua` (`set_zip`, `resolved_location`, `collect_attach`) |
