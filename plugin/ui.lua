@@ -754,6 +754,68 @@ local function progress_hint(elapsed, timeout, kind, pulse_n)
     return hints[((pulse_n - 1) % #hints) + 1]
 end
 
+local SPIN = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+
+--- Spinner + elapsed while a catalog/HTTP/git command runs.
+--- Call from a key/palette callback only (pulses use call_after during run_child_process yields).
+--- opts: title, command, config, interval
+function M.start_busy(ai_pane, opts)
+    opts = opts or {}
+    local cfg = opts.config or {}
+    local title = opts.title or "wezai"
+    local command = opts.command
+    local interval = tonumber(opts.interval) or 0.45
+    M.begin_turn(ai_pane, os.date("%H:%M:%S") .. "  " .. title)
+    if type(command) == "string" and command ~= "" then
+        M.ai_print(ai_pane, command, "command")
+    end
+    if cfg.show_loading == false then
+        M.ai_print(ai_pane, "waiting…", "status")
+        return { stop = function() end }
+    end
+    local state = { done = false, started = os.time(), pulse_n = 0 }
+    local function line()
+        local frame = SPIN[(state.pulse_n % #SPIN) + 1]
+        local elapsed = os.time() - state.started
+        if elapsed < 1 then
+            return frame .. "  waiting…"
+        end
+        return string.format("%s  waiting…  %s", frame, fmt_duration(elapsed))
+    end
+    M.ai_print(ai_pane, line(), "status")
+    local function pulse()
+        if state.done then
+            return
+        end
+        state.pulse_n = state.pulse_n + 1
+        M.ai_print(ai_pane, line(), "status")
+        if wezterm.time and wezterm.time.call_after then
+            wezterm.time.call_after(interval, pulse)
+        end
+    end
+    if wezterm.time and wezterm.time.call_after then
+        wezterm.time.call_after(interval, pulse)
+    end
+    return {
+        stop = function()
+            if state.done then
+                return
+            end
+            state.done = true
+            M.ai_print(ai_pane, "done (" .. fmt_duration(os.time() - state.started) .. ")", "status")
+        end,
+    }
+end
+
+--- start_busy around fn(); always stop() after fn returns.
+--- Do not pcall: catalog fns call run_child_process (yields). Lua pcall is not
+--- always yield-safe under WezTerm, and actions already print their own errors.
+function M.with_busy(ai_pane, opts, fn)
+    local busy = M.start_busy(ai_pane, opts)
+    fn()
+    busy.stop()
+end
+
 function M.start_progress(ai_pane, config)
     config = config or {}
     if config.show_loading == false then

@@ -234,7 +234,6 @@ function M.collect_attach(cwd, syn, config)
 end
 
 local function print_show(ai_pane, title, body)
-    ui.begin_turn(ai_pane, os.date("%H:%M:%S") .. "  git")
     ui.ai_print(ai_pane, title, "attach")
     -- "git" kind: default terminal fg for paths; readable accents for ## / status XY
     ui.ai_print(ai_pane, body ~= "" and body or "(empty)", "git")
@@ -1042,14 +1041,25 @@ function M.run_action(window, pane, config, id, extra)
         ui.ai_print(ai_pane, "Unknown @git:" .. tostring(id) .. " — try @git for the picker", "error")
         return
     end
-    action.run({
+    local ctx = {
         window = window,
         pane = shell_pane,
         ai_pane = ai_pane,
         config = config,
         cwd = cwd,
         extra = extra,
-    })
+    }
+    if action.kind == "show" or action.id == "sync" then
+        ui.with_busy(ai_pane, {
+            title = "git",
+            command = "@git:" .. action.id,
+            config = config,
+        }, function()
+            action.run(ctx)
+        end)
+        return
+    end
+    action.run(ctx)
 end
 
 function M.open_picker(window, pane, config)

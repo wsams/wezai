@@ -70,7 +70,7 @@ Raise `timeout` to **300â€“600** for big local GGUFs, or pre-warm (`ollama run â
 ### Config reload / local checkout
 
 - Prefer `plugin.require("/absolute/path/to/wezai")` while developing; **do not** call `wezterm.plugin.update_all()` on every reload.
-- GitHub installs: palette **Update wezai plugin**, or run `update_all()` once from the debug overlay, then reload.
+- GitHub installs: palette **Update wezai plugin** (fetch + `update_all` + reload), or run `update_all()` once from the debug overlay, then reload. If `require` fails, `git fetch` in the WezTerm plugin cache (README Troubleshooting).
 
 ---
 

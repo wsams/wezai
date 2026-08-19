@@ -727,4 +727,81 @@ function M.brand_with_version()
     return "wezai " .. M.version_label()
 end
 
+--- Git clone root for this install (may be one level above plugin/). io.open only.
+function M.plugin_git_root()
+    for _, start in ipairs({ install.repo_dir, install.plugin_dir }) do
+        for _, dir in ipairs(walk_up_dirs(start, 5)) do
+            local head_ok, head = M.read_text_file(dir .. SEP .. ".git" .. SEP .. "HEAD", 4096)
+            if head_ok and type(head) == "string" and trim(head) ~= "" then
+                return dir
+            end
+            local file_ok, content = M.read_text_file(dir .. SEP .. ".git", 4096)
+            if file_ok and type(content) == "string" and trim(content):match("^gitdir:") then
+                return dir
+            end
+        end
+    end
+    return nil
+end
+
+--- Human-readable install identity (version + cache paths). Safe at require time.
+function M.install_report()
+    local lines = {
+        M.brand_with_version() .. " (" .. M.version_source() .. ")",
+        "plugin_dir=" .. tostring(install.plugin_dir or "?"),
+        "repo_dir=" .. tostring(install.repo_dir or "?"),
+        "git_root=" .. tostring(M.plugin_git_root() or "?"),
+    }
+    return table.concat(lines, "\n")
+end
+
+--- Fetch + ff-only pull the wezai checkout. Call from a key/palette callback only —
+--- never from plugin require() (run_child_process yields across that C-call).
+--- @return ok, log_text, git_root
+function M.sync_plugin_git()
+    local root = M.plugin_git_root()
+    if not root then
+        return false, "no .git checkout found next to the wezai Lua path", nil
+    end
+    local git = M.resolve_executable("git", {
+        candidates = {
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/opt/homebrew/bin/git",
+            "/opt/local/bin/git",
+        },
+    })
+    if not git then
+        return false,
+            "git not on PATH for the WezTerm GUI process. Fetch by hand:\n  git -C '"
+                .. root
+                .. "' fetch origin && git -C '"
+                .. root
+                .. "' pull --ff-only",
+            root
+    end
+    local chunks = { "git_root=" .. root }
+    local function run(args)
+        local ok, stdout, stderr = M.run_cmd(args)
+        chunks[#chunks + 1] = "$ " .. table.concat(args, " ")
+        if stdout and trim(stdout) ~= "" then
+            chunks[#chunks + 1] = trim(stdout)
+        end
+        if stderr and trim(stderr) ~= "" then
+            chunks[#chunks + 1] = trim(stderr)
+        end
+        if not ok then
+            chunks[#chunks + 1] = "(exit failed)"
+        end
+        return ok
+    end
+    local fetch_ok = run({ git, "-C", root, "fetch", "origin" })
+    local pull_ok = run({ git, "-C", root, "pull", "--ff-only" })
+    if not pull_ok then
+        pull_ok = run({ git, "-C", root, "merge", "--ff-only", "origin/HEAD" })
+            or run({ git, "-C", root, "merge", "--ff-only", "origin/main" })
+    end
+    return fetch_ok and pull_ok, table.concat(chunks, "\n"), root
+end
+
 return M
