@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/wsams/wezai/compare/v1.10.0...v1.11.0) (2026-08-19)
+
+
+### Features
+
+* env-file config, palette plugin update, and bundled version ([#22](https://github.com/wsams/wezai/issues/22)) ([a51c13c](https://github.com/wsams/wezai/commit/a51c13c39daa833a01cf41270e28cac9f25db7e8))
+
 # [1.10.0](https://github.com/wsams/wezai/compare/v1.9.0...v1.10.0) (2026-08-19)
 
 
