@@ -8,7 +8,7 @@ You do not need to write a long report. A short issue with a few basics is enoug
 
 [Open a bug issue](https://github.com/wsams/wezai/issues/new) and include:
 
-1. **What you did** — the keybinding, palette action, or prompt (e.g. `CTRL+I`, `@git:status`, `@@README.md fix typos`).
+1. **What you did** — the keybinding, palette action, or prompt (e.g. `CTRL+I`, `@git:status`, `#README.md fix typos`).
 2. **What you expected** — one sentence is fine.
 3. **What happened instead** — error text, wrong output, or “nothing happened”.
 4. **Your environment** (when you know it):

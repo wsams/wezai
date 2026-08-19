@@ -628,7 +628,7 @@ add({
             .. "Put a brief summary in \"message\" and include the full HCL there (or clearly fenced). "
             .. "Set \"command\" to null unless a single safe next step helps (e.g. terraform fmt / validate). "
             .. "Do not suggest terraform apply/destroy. "
-            .. "If writing a file would help, mention using @@path with wezai.\n\n"
+            .. "If writing a file would help, mention using #path with wezai.\n\n"
             .. "Request: "
             .. instruction
             .. "\n\nExisting sources in cwd (may be empty):\n```\n"
@@ -655,7 +655,7 @@ add({
         local extra = trim(ctx.extra or "")
         local prompt = "You are helping debug Terraform. Using the error/output and configuration below, "
             .. "diagnose the issue briefly and propose safe next steps. "
-            .. "Prefer terraform validate, fmt, plan, state list, or @@file edits. "
+            .. "Prefer terraform validate, fmt, plan, state list, or #file edits. "
             .. "Never put terraform apply/destroy/force-unlock in \"command\" unless the user clearly asked to mutate. "
             .. "Use placeholders like <resource> if a name is unclear.\n"
             .. (extra ~= "" and ("\nExtra instruction: " .. extra .. "\n") or "")

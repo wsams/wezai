@@ -912,7 +912,7 @@ add_action({
         end
         local extra = ctx.extra and ctx.extra ~= "" and ("\nExtra: " .. ctx.extra) or ""
         local prompt = "Help resolve these merge conflicts. For each file, explain both sides and recommend a resolution. "
-            .. "If a file should be edited, mention using @@path with a clear instruction. "
+            .. "If a file should be edited, mention using #path with a clear instruction. "
             .. "Set command null unless a single safe git command helps (e.g. git checkout --ours path)."
             .. extra
             .. "\n\n"
@@ -921,13 +921,13 @@ add_action({
 
         local first = files[1]
         ui.input_select(ctx.window, ctx.pane, "Conflict follow-up", {
-            { id = "edit", label = "Edit first conflict with @@ — " .. first },
+            { id = "edit", label = "Edit first conflict with # — " .. first },
             { id = "done", label = "Done — read AI advice only" },
         }, function(win, p, id)
             if id ~= "edit" then
                 return
             end
-            local line = "@@"
+            local line = "#"
                 .. first
                 .. " resolve merge conflict markers; keep the correct final content and remove all conflict marker lines"
             local ctxmod = require("context")

@@ -22,6 +22,7 @@ do
         "weather.lua",
         "history.lua",
         "files.lua",
+        "composer.lua",
         "version.lua",
     }
 
@@ -235,6 +236,7 @@ end
 
 local palette = require("palette")
 local files = require("files")
+local composer = require("composer")
 local providers = require("providers")
 local settings = require("settings")
 local stats = require("stats")
@@ -342,6 +344,91 @@ local function handle_ai_request(window, shell_pane, prompt, config, opts)
     end
 end
 
+local function collect_edit_changes(response, request)
+    local targets = request.targets
+    if type(targets) ~= "table" or #targets == 0 then
+        targets = {
+            {
+                path = request.target_path,
+                content = request.original_content or "",
+                is_new = request.is_new,
+            },
+        }
+    end
+    local by_path = {}
+    local by_base = {}
+    for _, t in ipairs(targets) do
+        if t.path then
+            by_path[t.path] = t
+            local base = t.path:match("([^/\\]+)$")
+            if base then
+                by_base[base] = t
+            end
+        end
+    end
+
+    local changes = {}
+    local used = {}
+    local function add(path, content)
+        if type(content) ~= "string" or content == "" then
+            return
+        end
+        local t = (path and by_path[path]) or nil
+        if not t and path then
+            local base = path:match("([^/\\]+)$") or path
+            t = by_base[base]
+        end
+        if not t and #targets == 1 then
+            t = targets[1]
+        end
+        if not t or not t.path or used[t.path] then
+            return
+        end
+        used[t.path] = true
+        changes[#changes + 1] = {
+            path = t.path,
+            original = t.content or "",
+            new_content = content,
+        }
+    end
+
+    if type(response.files) == "table" then
+        if response.files[1] then
+            for _, item in ipairs(response.files) do
+                if type(item) == "table" then
+                    add(
+                        item.path or item.file,
+                        item.content or item.new_content or (type(item.file) == "string" and item.file or nil)
+                    )
+                end
+            end
+        else
+            for path, content in pairs(response.files) do
+                if type(content) == "string" then
+                    add(path, content)
+                elseif type(content) == "table" then
+                    add(content.path or path, content.content or content.file or content.new_content)
+                end
+            end
+        end
+    end
+
+    if #changes == 0 then
+        local new_content = response.file
+        if type(new_content) ~= "string" or new_content == "" then
+            if type(response.content) == "string" and response.content ~= "" then
+                new_content = response.content
+            elseif type(response.new_content) == "string" and response.new_content ~= "" then
+                new_content = response.new_content
+            end
+        end
+        if type(new_content) == "string" and new_content ~= "" then
+            add(request.target_path, new_content)
+        end
+    end
+    return changes
+end
+
 local function handle_edit_request(window, shell_pane, request, config)
     local ai_pane = ui.ensure_ai_pane(window, shell_pane, config)
     local prompt = prepend_history(window, request.prompt, config)
@@ -381,61 +468,126 @@ local function handle_edit_request(window, shell_pane, request, config)
         return
     end
 
-    -- Prefer "file"; accept common aliases models invent despite the prompt.
-    local new_content = response.file
-    if type(new_content) ~= "string" or new_content == "" then
-        if type(response.content) == "string" and response.content ~= "" then
-            new_content = response.content
-        elseif type(response.new_content) == "string" and response.new_content ~= "" then
-            new_content = response.new_content
-        end
-    end
-    if type(new_content) ~= "string" or new_content == "" then
-        ui.ai_print(ai_pane, "Edit response missing non-empty \"file\" field", "error")
+    -- Prefer "file" / "files"; accept common aliases models invent despite the prompt.
+    local changes = collect_edit_changes(response, request)
+    if #changes == 0 then
+        ui.ai_print(ai_pane, "Edit response missing non-empty file contents", "error")
         if response.message then
             ui.ai_print(ai_pane, tostring(response.message), "message")
         end
         return
     end
 
-    local original = request.original_content
-    if not original then
-        local ok, content = util.read_text_file(request.target_path, config.max_file_bytes)
-        original = ok and content or ""
+    local apply_cb = function(applied)
+        if applied and response.message then
+            session.add_turn(window, "assistant", context.redact(tostring(response.message)), config.chat_max_turns)
+        end
     end
 
-    edit.confirm_and_apply(
-        window,
-        shell_pane,
-        ai_pane,
-        config,
-        request.target_path,
-        original,
-        new_content,
-        response.message,
-        function(applied)
-            if applied and response.message then
-                session.add_turn(window, "assistant", context.redact(tostring(response.message)), config.chat_max_turns)
-            end
-        end
-    )
+    if #changes == 1 then
+        edit.confirm_and_apply(
+            window,
+            shell_pane,
+            ai_pane,
+            config,
+            changes[1].path,
+            changes[1].original,
+            changes[1].new_content,
+            response.message,
+            apply_cb
+        )
+        return
+    end
+
+    edit.confirm_and_apply_many(window, shell_pane, ai_pane, config, changes, response.message, apply_cb)
 end
 
 local function dispatch_request(window, shell_pane, request, config, opts)
     opts = opts or {}
     local ai_pane = ui.ensure_ai_pane(window, shell_pane, config)
 
+    if request.mode == "pin" then
+        local names = {}
+        for _, file in ipairs(request.files or {}) do
+            names[#names + 1] = file.path or "?"
+        end
+        local summary = session.pins_summary(window)
+        ui.ai_print(
+            ai_pane,
+            "Pinned for this chat (until Clear). Compact keeps these files.\n"
+                .. (summary ~= "" and summary or table.concat(names, ", ")),
+            "attach"
+        )
+        if request.omitted and #request.omitted > 0 then
+            ui.ai_print(
+                ai_pane,
+                "Omitted (token/size budget): " .. table.concat(request.omitted, ", "),
+                "warn"
+            )
+        end
+        ui.ai_print(ai_pane, "CTRL+I again to ask — files stay in context.", "system")
+        return
+    end
+
+    if request.needs_confirm and not opts.skip_token_confirm and not session.large_ok(window) then
+        local msg = request.confirm_message
+            or ("Large context (~" .. tostring(request.token_estimate or "?") .. " tokens). Send anyway?")
+        ui.ai_print(ai_pane, msg, "warn")
+        ui.confirm(window, shell_pane, msg, "yes", function(win, p, ok)
+            if not ok then
+                ui.ai_print(ui.ensure_ai_pane(win, p, config), "Cancelled — context not sent.", "warn")
+                return
+            end
+            session.mark_large_ok(win)
+            request.needs_confirm = false
+            dispatch_request(win, p, request, config, { share_pane = opts.share_pane, skip_token_confirm = true })
+        end)
+        return
+    end
+
     if request.files and #request.files > 0 then
         local names = {}
         for _, file in ipairs(request.files) do
             local tag = (request.mode == "edit" and file.path == request.target_path) and "edit:" or ""
+            if request.mode == "edit" and file.from_dir then
+                tag = "edit:"
+            elseif request.mode == "edit" then
+                local is_target = false
+                for _, t in ipairs(request.targets or {}) do
+                    if t.path == file.path then
+                        is_target = true
+                        break
+                    end
+                end
+                tag = is_target and "edit:" or tag
+            end
             local name = tag .. (file.path or "?")
             if file.truncated then
                 name = name .. " (truncated " .. tostring(file.size or "?") .. "B)"
             end
             table.insert(names, name)
         end
-        ui.ai_print(ai_pane, "Attached: " .. table.concat(names, ", "), "attach")
+        local extra = ""
+        if request.token_estimate then
+            extra = "  (~" .. tostring(request.token_estimate) .. " tok)"
+        end
+        ui.ai_print(ai_pane, "Attached: " .. table.concat(names, ", ") .. extra, "attach")
+        local pins = session.pins_summary(window)
+        if pins ~= "" then
+            ui.ai_print(ai_pane, "Session files: " .. pins, "system")
+        end
+        if request.omitted and #request.omitted > 0 then
+            ui.ai_print(
+                ai_pane,
+                "Omitted (token/size budget): " .. table.concat(request.omitted, ", "),
+                "warn"
+            )
+        end
+    else
+        local pins = session.pins_summary(window)
+        if pins ~= "" then
+            ui.ai_print(ai_pane, "Session files: " .. pins, "system")
+        end
     end
 
     if request.mode == "edit" then
@@ -458,26 +610,66 @@ local function prompt_for_ai(window, pane, config, opts)
     ui.ensure_ai_pane(window, pane, config)
 
     local description
+    local pins = session.pins_summary(window)
     if selected_file then
-        description = "wezai — @path / @pick / @@file / @git / @kube / @tf / @weather / @history\n---\n"
+        description = "wezai — @path attach  #file edit  (@@ still works)\n---\n"
             .. util.truncate(selected_file)
             .. "\n---"
     elseif selection then
-        description = "wezai — selection attached; @pick / @git / @kube / @tf / @weather / @history / @@file\n---\n"
+        description = "wezai — selection sticky until Compact; @pick / #file / @git / @kube / @tf / @weather\n---\n"
             .. util.truncate(selection)
             .. "\n---"
     else
-        description = "wezai — @path / @pick / @git / @kube / @tf / @weather / @history · palette CTRL+SHIFT+P"
+        description = "wezai — @ attach  # edit  · @git / @weather / @history  · compact / clear  · palette CTRL+SHIFT+P"
         if share_pane then
             description = description .. " · sharing pane history"
         end
+    end
+    if pins ~= "" then
+        description = description .. "\nsession: " .. pins
+    end
+    local draft = session.get_draft(window)
+    if draft and draft ~= "" then
+        description = description .. "\ndraft restored"
     end
     if opts.prefill_hint then
         description = opts.prefill_hint .. "\n" .. description
     end
 
+    local function do_compact(win, p)
+        local info = session.compact(win, config)
+        local ai_pane = ui.ensure_ai_pane(win, p, config)
+        ui.ai_print(
+            ai_pane,
+            string.format(
+                "Compacted chat %d → %d turns; cleared %d sticky selection(s). Kept %d @/# file refs.",
+                info.turns_before or 0,
+                info.turns_after or 0,
+                info.ephemeral_cleared or 0,
+                info.pins_kept or 0
+            ),
+            "system"
+        )
+    end
+
+    local function do_clear(win, p)
+        session.clear(win)
+        ui.ai_print(ui.ensure_ai_pane(win, p, config), "Cleared chat, selections, and @/# file list.", "system")
+    end
+
     local function process_ask_line(win, p, line)
         if line == nil then
+            return
+        end
+        session.clear_draft(win)
+
+        local trimmed = (line:match("^%s*(.-)%s*$") or "")
+        if trimmed == "compact" or trimmed == "/compact" then
+            do_compact(win, p)
+            return
+        end
+        if trimmed == "clear" or trimmed == "/clear" then
+            do_clear(win, p)
             return
         end
 
@@ -535,7 +727,7 @@ local function prompt_for_ai(window, pane, config, opts)
         local function run_prepared(req_line)
             local request, err = context.prepare_request(win, p, req_line, selection, config)
             if err then
-                -- Missing @attach paths → fuzzy pick. @@create is handled in context (new files OK).
+                -- Missing @attach paths → fuzzy pick. #create is handled in context (new files OK).
                 if err:find("file not found", 1, true) then
                     local parsed = context.parse_at_refs(req_line)
                     if #parsed.edit_paths == 0 then
@@ -561,6 +753,7 @@ local function prompt_for_ai(window, pane, config, opts)
                 return
             end
             if opts.extra_context and opts.extra_context ~= "" then
+                session.add_ephemeral(win, "Context from history", context.redact(opts.extra_context))
                 request.prompt = "Context from history:\n```\n"
                     .. context.redact(opts.extra_context)
                     .. "\n```\n\n"
@@ -577,7 +770,7 @@ local function prompt_for_ai(window, pane, config, opts)
                     local rest = pick.rest or ""
                     local rebuilt
                     if pick.mode == "edit" then
-                        rebuilt = "@@" .. rel .. (rest ~= "" and (" " .. rest) or "")
+                        rebuilt = "#" .. rel .. (rest ~= "" and (" " .. rest) or "")
                     else
                         rebuilt = "@" .. rel .. (rest ~= "" and (" " .. rest) or "")
                     end
@@ -590,7 +783,7 @@ local function prompt_for_ai(window, pane, config, opts)
                                     if instr == nil or instr:match("^%s*$") then
                                         return
                                     end
-                                    process_ask_line(w3, p3, "@@" .. rel .. " " .. instr)
+                                    process_ask_line(w3, p3, "#" .. rel .. " " .. instr)
                                 end),
                             }),
                             p2
@@ -603,7 +796,7 @@ local function prompt_for_ai(window, pane, config, opts)
             return
         end
 
-        -- `@pick` / `@@pick` embedded among other text
+        -- `@pick` / `#pick` / `@@pick` embedded among other text
         local parsed = context.parse_at_refs(line)
         local embedded_pick = false
         local embed_mode = "attach"
@@ -625,7 +818,7 @@ local function prompt_for_ai(window, pane, config, opts)
                     local rest = parsed.rest or ""
                     local rebuilt
                     if embed_mode == "edit" then
-                        rebuilt = "@@" .. rel .. (rest ~= "" and (" " .. rest) or "")
+                        rebuilt = "#" .. rel .. (rest ~= "" and (" " .. rest) or "")
                     else
                         -- keep any other non-pick path refs from the original line
                         local extras = {}
@@ -647,15 +840,36 @@ local function prompt_for_ai(window, pane, config, opts)
         run_prepared(line)
     end
 
-    window:perform_action(
-        action.PromptInputLine({
+    local function open_overlay_prompt()
+        local prompt = {
             description = description,
             action = wezterm.action_callback(function(win, p, line)
+                if line == nil then
+                    -- Escape: keep existing draft (composer also saves live).
+                    return
+                end
                 process_ask_line(win, p, line)
             end),
-        }),
-        pane
-    )
+        }
+        if draft and draft ~= "" then
+            prompt.initial_value = draft
+        end
+        window:perform_action(action.PromptInputLine(prompt), pane)
+    end
+
+    local use_composer = not (config.composer and config.composer.enabled == false)
+    if use_composer then
+        local opened, err = composer.open(window, pane, config, {
+            on_submit = function(win, p, line)
+                process_ask_line(win, p, line)
+            end,
+        })
+        if opened then
+            return
+        end
+        wezterm.log_warn("wezai: composer unavailable (" .. tostring(err) .. "); falling back to overlay prompt")
+    end
+    open_overlay_prompt()
 end
 
 local function fix_last_error(window, pane, config)
@@ -811,7 +1025,7 @@ palette.handlers = {
                             if instr == nil or instr:match("^%s*$") then
                                 return
                             end
-                            local line = "@@" .. rel .. " " .. instr
+                            local line = "#" .. rel .. " " .. instr
                             local request, err = context.prepare_request(w3, p3, line, nil, cfg)
                             if err then
                                 ui.ai_print(ui.ensure_ai_pane(w3, p3, cfg), "wezai: " .. err, "error")
@@ -870,9 +1084,23 @@ palette.handlers = {
     pick_model = function(win, p, cfg)
         pick_model(win, p, cfg)
     end,
+    compact = function(win, p, cfg)
+        local info = session.compact(win, cfg)
+        ui.ai_print(
+            ui.ensure_ai_pane(win, p, cfg),
+            string.format(
+                "Compacted chat %d → %d turns; cleared %d sticky selection(s). Kept %d @/# file refs.",
+                info.turns_before or 0,
+                info.turns_after or 0,
+                info.ephemeral_cleared or 0,
+                info.pins_kept or 0
+            ),
+            "system"
+        )
+    end,
     clear = function(win, p, cfg)
         session.clear(win)
-        ui.ai_print(ui.ensure_ai_pane(win, p, cfg), "Chat memory cleared.", "system")
+        ui.ai_print(ui.ensure_ai_pane(win, p, cfg), "Cleared chat, selections, and @/# file list.", "system")
     end,
     update_plugin = function(win, p, cfg)
         local ai_pane = ui.ensure_ai_pane(win, p, cfg)
@@ -896,6 +1124,7 @@ palette.handlers = {
 local function apply_to_config(wezterm_config, user_config)
     local config = settings.finalize(user_config)
     settings.maybe_extend_rocks_path(config)
+    composer.ensure_hook()
     if config._env_file then
         wezterm.log_info("wezai: env file " .. tostring(config._env_file))
     end

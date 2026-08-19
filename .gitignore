@@ -1,6 +1,10 @@
 # Node (semantic-release / Renovate)
 node_modules/
 
+# Python (composer.py)
+__pycache__/
+*.pyc
+
 # Compiled Lua sources
 luac.out
 

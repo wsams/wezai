@@ -45,7 +45,7 @@ Other WezTerm defaults to treat carefully when picking shortcuts (non-exhaustive
 
 ## Local HTTP / Ollama pitfalls
 
-Ask and `@@` edit **require** a JSON object reply (SPECS §4.4). That is not optional style — parsers hard-fail without it.
+Ask and `#`/`@@` edit **require** a JSON object reply (SPECS §4.4). That is not optional style — parsers hard-fail without it.
 
 ### Prefer instruct models over “thinking” models
 
@@ -55,7 +55,7 @@ wezai is a **structured-output** client (`message` + `command`, or `message` + `
 - invent field names (`content` instead of `file`) → edit errors
 - burn long completion budgets on tiny prompts
 
-Prefer instruction-tuned chat/coder models that follow “JSON only” (e.g. `qwen2.5:14b`, `qwen2.5-coder:14b`). Do **not** “fix” thinking-model flakiness by removing the JSON contract from `system_prompt` — Ask/Edit still need it. Custom style prompts are fine; `settings.finalize` appends `REPLY_CONTRACT` when `"message"` is absent. `@@` edit **ignores** user `system_prompt` and uses `context.EDIT_SYSTEM_PROMPT`.
+Prefer instruction-tuned chat/coder models that follow “JSON only” (e.g. `qwen2.5:14b`, `qwen2.5-coder:14b`). Do **not** “fix” thinking-model flakiness by removing the JSON contract from `system_prompt` — Ask/Edit still need it. Custom style prompts are fine; `settings.finalize` appends `REPLY_CONTRACT` when `"message"` is absent. `#` / `@@` edit **ignores** user `system_prompt` and uses `context.EDIT_SYSTEM_PROMPT`.
 
 ### `timeout` vs cold model load
 

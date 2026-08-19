@@ -13,7 +13,7 @@ Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `
 
 | Entry point | When to use it |
 |-------------|----------------|
-| `CTRL+I` | Free-form Ask (`@file`, questions, `@@` edits) |
+| `CTRL+I` | Free-form Ask (`@file`, `@dir/`, questions, `#` edits). Composer keeps the AI log visible |
 | `CTRL+SHIFT+P` | Palette — jump to any action without typing a full Ask line |
 | `CTRL+SHIFT+G` | Same palette, pre-filtered to `@git` |
 | `CTRL+SHIFT+K` | Same palette, pre-filtered to `@kube` |
@@ -26,6 +26,10 @@ You do **not** need `CTRL+I` before the palette. From the shell: `CTRL+SHIFT+P` 
 ---
 
 ## Ask (`CTRL+I`)
+
+CTRL+I splits a **composer** under your shell. The right-hand wezai pane stays visible so you can copy from the last answer. Esc saves a draft; the next CTRL+I restores it. Type `@` or `#` to fuzzy-complete files and directories in the cwd.
+
+Pinned `@` / `#` files stay in context for follow-up questions until you **Clear**. **Compact** (palette, or type `compact`) shrinks the conversation and sticky selections but keeps those file refs.
 
 ### Plain questions
 
@@ -44,7 +48,7 @@ fish: recursively find files larger than 100M
 3. Enter alone → explain/diagnose  
 4. Or type: `what does this exit code mean?`
 
-### Files — `@path` (read-only)
+### Files — `@path` (read-only, pinned)
 
 ```
 @README.md
@@ -58,21 +62,36 @@ fish: recursively find files larger than 100M
 @src/main.lua @src/util.lua how are these wired together?
 ```
 
-Paths are relative to the pane cwd unless absolute or `~/…`.
-
-### Edit — `@@path` (write)
-
-Exactly **two** `@` signs, then path, then instruction:
-
 ```
-@@notes.txt sort the lines alphabetically
+@plugin/
+how does module loading work?
 ```
 
+`@directory/` walks the tree (skips `node_modules`, `.git`, wezai backups) and attaches source-like files up to the token budget. Huge packs ask for confirmation.
+
+Paths are relative to the pane cwd unless absolute or `~/…`. File pins last until Clear.
+
+### Edit — `#path` (write)
+
+`#` then path, then instruction (`@@path` still works):
+
 ```
-@@config.toml add a comment above the [server] section explaining the port
+#notes.txt sort the lines alphabetically
 ```
 
-Flow: model returns a full file → wezai shows a **unified diff** in the confirm overlay (and the right pane) → **Apply** or **Cancel**. Apply writes the file and keeps a timestamped backup such as `notes.txt.20260805-195530.wezai.bak` (configurable via `backup.*`; can be disabled).
+```
+#config.toml add a comment above the [server] section explaining the port
+```
+
+```
+#plugin/init.lua
+```
+
+The last form **pins** the file for edit; the next CTRL+I question is applied to it.
+
+`#plugin/` pins every attachable file under that directory as edit targets (multi-file apply + one confirm).
+
+Flow: model returns full file(s) → wezai shows a **unified diff** in the confirm overlay (and the right pane) → **Apply** or **Cancel**. Apply writes the file and keeps a timestamped **dotfile** backup such as `.notes.txt.20260805-195530.wezai.bak` (searchable `*wezai*.bak`; configurable via `backup.*`; can be disabled).
 
 Undo: palette → **Undo last edit**.
 
@@ -121,12 +140,13 @@ Type to fuzzy-filter. Labels start with namespaces so filtering is easy:
 | **Ask (with pane history)…** | Ask + attach scrollback |
 | **Fix last error** | Diagnose selection or recent scrollback; propose a fix |
 | **Explain last command** | Explain last command + output from scrollback |
-| **Edit file (`@@path …`)** | Opens Ask so you can type an edit |
-| **Undo last edit** | Restore last `@@` write from its backup (or in-memory prior text if backups are off) |
+| **Edit file (`#path …`)** | Opens Ask so you can type an edit |
+| **Undo last edit** | Restore last `#` write from its wezai backup (or in-memory prior text if backups are off) |
 | **Copy last command** | Clipboard: last AI command, else shell history, else scrollback |
 | **Re-ask last question (shorter)** | Same question, shorter answer |
 | **Pick model…** | Switch model for next requests (`models` list / `WEZAI_MODELS`) |
-| **Clear chat memory** | Wipe multi-turn memory for this tab |
+| **Compact chat (keep @/# files)** | Shrink conversation + sticky selection; keep pinned files |
+| **Clear chat + file context** | Wipe turns, selections, drafts, and `@`/`#` pins |
 | **Update wezai plugin** | `wezterm.plugin.update_all()` then reload config (GitHub installs). Prefer this over uncommenting `update_all()` in `wezterm.lua`. |
 
 ---
@@ -179,7 +199,7 @@ Mutating actions confirm, then run in your **shell** pane. Inspect actions print
 | `@git:explain` | Plain-English status + diff |
 | `@git:review` | Bugs / secrets / missing tests |
 | `@git:pr` | PR title + bullets vs default branch |
-| `@git:resolve` | Help on conflicted files; optional `@@` edit |
+| `@git:resolve` | Help on conflicted files; optional `#` edit |
 | `@git:fixup` | Suggested clean-up sequence for a dirty tree |
 
 Extra instruction after the action:
@@ -279,7 +299,7 @@ Open via `CTRL+SHIFT+P` → type `@tf`, or `CTRL+ALT+T`, or Ask → `@tf` / `@tf
 
 Commands use the **shell pane cwd** (`terraform -chdir=…` for show/AI). wezai resolves the `terraform` binary the same way as kubectl (Homebrew/asdf/mise + login shell), or set `tf.terraform = "/usr/local/bin/terraform"`.
 
-**Mutating** actions (`apply`, `destroy`, `import`, `state-rm`) confirm when `tf.confirm_mutate` is true (default). `unlock` (`force-unlock`) always confirms. AI helpers gather read-only context and steer toward validate / fmt / plan / `@@` edits — not apply/destroy.
+**Mutating** actions (`apply`, `destroy`, `import`, `state-rm`) confirm when `tf.confirm_mutate` is true (default). `unlock` (`force-unlock`) always confirms. AI helpers gather read-only context and steer toward validate / fmt / plan / `#` edits — not apply/destroy.
 
 ### Show (no model)
 
@@ -447,7 +467,7 @@ or palette → **Fix last error**
 ### “Rewrite a messy file”
 
 ```
-CTRL+I → @@scripts/bootstrap.sh make this idiomatic fish and add set -e
+CTRL+I → #scripts/bootstrap.sh make this idiomatic fish and add set -e
 ```
 
 Review the diff → Apply.
@@ -473,7 +493,7 @@ Or generate new HCL:
 CTRL+I → @tf:generate aws_s3_bucket with versioning enabled
 ```
 
-Then write it with `@@main.tf …` after reviewing the suggestion.
+Then write it with `#main.tf …` after reviewing the suggestion.
 
 ### “What’s the weather?”
 
@@ -494,8 +514,8 @@ CTRL+I → @weather should I bring a jacket tonight?
 
 - Secrets (API keys, tokens, private keys) are redacted before send / memory  
 - Risky shell commands confirm before send (includes `terraform apply` / `destroy` / `force-unlock`)  
-- `@@` edits always show a unified diff in the confirm overlay unless you disable `require_edit_confirm`  
-- Edit backups are timestamped (`backup.suffix` / `backup.dir`); set `backup.enabled = false` to skip writing `.bak` files  
+- `#` / `@@` edits always show a unified diff in the confirm overlay unless you disable `require_edit_confirm`  
+- Edit backups are timestamped wezai **dotfiles** (`backup.suffix` / `backup.dir` / `backup.dotfile`); set `backup.enabled = false` to skip writing `.bak` files  
 - No force-push action in v1  
 - `@git:latest` uses `--ff-only` only  
 - Terraform AI helpers prefer validate/fmt/plan — not apply/destroy  
