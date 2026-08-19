@@ -1,13 +1,14 @@
 # wezai
 
-**wezai** is a WezTerm plugin that puts an AI assistant, a command palette, and git/kube/terraform/history shortcuts next to your shell — without leaving the terminal.
+**wezai** is a WezTerm plugin that puts an AI assistant, a command palette, and git/kube/terraform/weather/history shortcuts next to your shell — without leaving the terminal.
 
 > **Alpha software.** wezai is in active development and under heavy testing. Behavior and APIs may change. If you hit a bug or have an idea, please [open an issue](https://github.com/wsams/wezai/issues) — reports are welcome and help shape the project. See [CONTRIBUTING.md](CONTRIBUTING.md) for what to include.
 
-- Ask questions with file, directory, clipboard, git, kube, terraform, and selection context  
+- Ask questions with file, directory, clipboard, git, kube, terraform, weather, and selection context  
 - Edit files in one pass (`#path`, legacy `@@path`) with a unified diff confirm and wezai dotfile backups  
 - CTRL+I composer keeps the AI log visible; `@` / `#` fuzzy-complete paths; context persists until Compact/Clear  
-- One palette (`CTRL+SHIFT+P`) for Ask helpers, `@git:…`, `@kube:…`, `@tf:…`, and `@history`  
+- One palette (`CTRL+SHIFT+P`) for Ask helpers, `@git:…`, `@kube:…`, `@tf:…`, `@weather:…`, and `@history`  
+
 - Shell-aware suggestions, secret redaction, risky-command confirms  
 
 Full walkthroughs and every palette action: **[GUIDE.md](GUIDE.md)**
@@ -16,7 +17,7 @@ Full walkthroughs and every palette action: **[GUIDE.md](GUIDE.md)**
 
 ## Install
 
-Load it from GitHub in `~/.config/wezterm/wezterm.lua`:
+Load it from GitHub in `~/.config/wezterm/wezterm.lua`. Customizations belong in **`~/.config/wezterm/wezai.env`** (or `$XDG_CONFIG_HOME/wezterm/wezai.env`) so you can copy this Lua as-is when wezai’s example changes:
 
 ```lua
 local wezterm = require("wezterm")
@@ -24,46 +25,36 @@ local config = wezterm.config_builder()
 
 local wezai = wezterm.plugin.require("https://github.com/wsams/wezai")
 -- Local checkout (development):
--- local wezai = wezterm.plugin.require("/Users/you/path/to/wezai")
+-- local wezai = wezterm.plugin.require("/absolute/path/to/wezai")
 
-wezai.apply_to_config(config, {
-  type = "http",
-  api_url = "https://your-endpoint/v1/chat/completions",
-  api_key = "your-key",
-  model = "your-model",
-
-  -- Ask prompt
-  keybinding = {
-    key = "i",
-    mods = "CTRL", -- CTRL+I (use "SUPER" for Cmd+I on macOS if you prefer)
-  },
-
-  -- Ask with shared pane scrollback as context
-  keybinding_with_pane = {
-    key = "e",
-    mods = "CTRL|SHIFT",
-  },
-
-  -- Optional style notes. Shell dialect (fish/zsh/bash/PowerShell) is detected from the
-  -- active pane (or $SHELL) and appended automatically — no need to hardcode Fish/zsh/etc.
-  system_prompt = "You are a concise terminal assistant. Provide direct commands or brief explanations. "
-    .. "Warn of dangerous commands. Avoid unnecessary verbosity. Prefer interactive commands that require "
-    .. "user verification before proceeding when possible.",
-})
+wezai.apply_to_config(config)
 
 return config
 ```
 
-WezTerm clones plugins into its cache on first `require`. After you pull new commits (or edit a local checkout), run `wezterm.plugin.update_all()` once — from the debug overlay, or temporarily from your config — then reload WezTerm so the cache picks up the changes. Palette titles and the AI pane banner show the installed version (e.g. `wezai v1.7.0+fc6d5b5`) so you can confirm the update landed.
+Defaults (no env file, no Lua table): **Ollama** at `http://127.0.0.1:11434/v1/chat/completions`, model `llama3.2`, timeout 300s, Ask on **`CTRL+I`**. Override anything via env — GUI / Flatpak WezTerm (including Bazzite) often **does not** see `.bashrc` variables, so the env **file** is the reliable place.
+
+```bash
+# ~/.config/wezterm/wezai.env  — see wezai.env.example in the repo
+WEZAI_MODEL=llama3.2
+WEZAI_WEATHER_ZIP=90210
+# WEZAI_API_URL=https://api.openai.com/v1/chat/completions
+# WEZAI_API_KEY=  # or export OPENAI_API_KEY in a login environment WezTerm inherits
+```
+
+Optional Lua table still wins over env if you pass one: `wezai.apply_to_config(config, { model = "qwen2.5:14b" })`.
+
+WezTerm clones plugins into its cache on first `require`. To pull a new GitHub release **without** uncommenting `update_all()` in this file: palette (`CTRL+SHIFT+P`) → **Update wezai plugin**. That runs `wezterm.plugin.update_all()` and reloads config. Palette titles and the AI pane banner show the installed version (e.g. `wezai v1.10.0+fc6d5b5`) so you can confirm the update landed. Debug Overlay still works if you prefer it; do **not** leave `update_all()` / `reload_configuration()` at config file scope (reload loops / overwrites a local checkout).
 
 ### Providers
 
-| `type` | What you need |
+| `type` (`WEZAI_TYPE`) | What you need |
 |--------|----------------|
-| `"http"` | OpenAI-compatible `api_url` + `model` (+ `api_key` if required). For Ollama: `http://127.0.0.1:11434/v1/chat/completions`, raise `timeout` (e.g. 300–600) for large cold loads, and prefer instruct models over “thinking” GGUFs (Ask/`#` edits need JSON — see SPECS §4.4). |
-| `"local"` | LM Studio CLI (`lms_path`) |
-| `"ollama"` | `ollama_path` + `model` |
-| `"google"` | Gemini `api_key` + `model` (uses curl + WezTerm JSON) |
+| `"http"` (default) | OpenAI-compatible `WEZAI_API_URL` + `WEZAI_MODEL` (`WEZAI_API_KEY` if required). For Ollama the default URL is already `http://127.0.0.1:11434/v1/chat/completions`. Raise `WEZAI_TIMEOUT` (e.g. 300–600) for large cold loads, and prefer instruct models over “thinking” GGUFs (Ask/`#` edits need JSON — see SPECS §4.4). |
+| `"local"` | LM Studio CLI (`WEZAI_LMS_PATH`) |
+| `"ollama"` | `WEZAI_OLLAMA_PATH` + `WEZAI_MODEL` (CLI, not HTTP) |
+| `"google"` | Gemini `WEZAI_API_KEY` or `GEMINI_API_KEY` + `WEZAI_MODEL` (uses curl + WezTerm JSON) |
+
 ---
 
 ## Quick start
@@ -72,13 +63,14 @@ WezTerm clones plugins into its cache on first `require`. After you pull new com
 |-----|--------|
 | `CTRL+I` | **Ask** — composer under the shell (`@` attach, `#` edit). Esc saves a draft |
 | `CTRL+SHIFT+E` | **Ask** with pane scrollback attached as context |
-| `CTRL+SHIFT+P` | **Palette** — type `@git`, `@kube`, `@tf`, `@history`, or `Ask` to filter |
+| `CTRL+SHIFT+P` | **Palette** — type `@git`, `@kube`, `@tf`, `@weather`, `@history`, or `Ask` to filter |
 | `CTRL+SHIFT+G` | Palette scoped to `@git` |
 | `CTRL+SHIFT+K` | Palette scoped to `@kube` |
 | `CTRL+ALT+T` | Palette scoped to `@tf` (not `CTRL+SHIFT+T` — that is WezTerm’s new tab) |
+| `CTRL+ALT+W` | Palette scoped to `@weather` (not `CTRL+SHIFT+W` — that is WezTerm’s close tab) |
 | `CTRL+SHIFT+H` | Palette scoped to `@history` |
 
-Stay on your **shell** pane. The right split is **output only** (answers, diffs, git/kube/tf status). Don’t run git from that pane — wezai always uses your shell’s cwd.
+Stay on your **shell** pane. The right split is **output only** (answers, diffs, git/kube/tf/weather status). Don’t run git from that pane — wezai always uses your shell’s cwd.
 
 ```
 CTRL+SHIFT+P  →  type @git:status  →  Enter
@@ -111,6 +103,8 @@ More examples: [GUIDE.md](GUIDE.md).
 | `@tf` / `@tf:validate` | Terraform helpers in the shell cwd (`terraform` binary auto-resolved) |
 | `@tf:state` in a question | Attach `terraform state list` and ask |
 | `@tf:generate …` / `@tf:debug` | AI helpers to generate or debug HCL |
+| `@weather` / `@weather:now` | Current conditions (Open-Meteo; needs a zip) |
+| `@weather:zip 90210` | Save zip from the plugin (`~/.local/share/wezai/weather.json`) |
 | `@dir:path` | Directory listing |
 | `@history …` | Attach recent history, or open the palette if used alone |
 
@@ -118,21 +112,40 @@ More examples: [GUIDE.md](GUIDE.md).
 
 ## Config sketch
 
+Merge order: **plugin defaults** → **`wezai.env` file** → **process environment** → **`apply_to_config` Lua table** (last wins).
+
+Most people never need the Lua table. Copy [wezai.env.example](wezai.env.example) to `~/.config/wezterm/wezai.env`.
+
+| Variable | Sets | Default |
+|----------|------|---------|
+| `WEZAI_TYPE` | `type` | `http` |
+| `WEZAI_API_URL` | `api_url` | `http://127.0.0.1:11434/v1/chat/completions` |
+| `WEZAI_API_KEY` | `api_key` | unset; falls back to `OPENAI_API_KEY` then `GEMINI_API_KEY` |
+| `WEZAI_MODEL` | `model` | `llama3.2` |
+| `WEZAI_MODELS` | `models` (comma-separated) | empty |
+| `WEZAI_TIMEOUT` | `timeout` (seconds) | `300` |
+| `WEZAI_OLLAMA_PATH` | `ollama_path` | unset |
+| `WEZAI_LMS_PATH` | `lms_path` | unset |
+| `WEZAI_KUBE_NS` | `kube.namespace` | kubectl current ns |
+| `WEZAI_WEATHER_ZIP` | `weather.zip` | unset (`@weather:zip` still works) |
+| `WEZAI_WEATHER_COUNTRY` | `weather.country` | `US` |
+| `WEZAI_WEATHER_UNITS` | `weather.units` | `auto` |
+| `WEZAI_ENV_FILE` | path to the env file | `~/.config/wezterm/wezai.env` (see `settings.env_file_candidates`) |
+
+Optional Lua overrides (win over env). `CTRL+I` / `CTRL+SHIFT+E` are already the defaults:
+
 ```lua
 wezai.apply_to_config(config, {
-  type = "http",
-  api_url = "https://api.openai.com/v1/chat/completions",
-  api_key = os.getenv("OPENAI_API_KEY"),
-  model = "gpt-4o-mini",
-  models = { "gpt-4o-mini", "gpt-4o" },
+  -- macOS: Cmd+I instead of CTRL+I
+  -- keybinding = { key = "i", mods = "SUPER" },
+  -- keybinding_with_pane = { key = "I", mods = "SUPER" },
 
-  keybinding = { key = "i", mods = "CTRL" },
-  keybinding_with_pane = { key = "e", mods = "CTRL|SHIFT" },
   keybinding_palette = { key = "p", mods = "CTRL|SHIFT" },
   keybinding_history = { key = "h", mods = "CTRL|SHIFT" },
   keybinding_git = { key = "g", mods = "CTRL|SHIFT" },
   keybinding_kube = { key = "k", mods = "CTRL|SHIFT" },
   keybinding_tf = { key = "t", mods = "CTRL|ALT" },
+  keybinding_weather = { key = "w", mods = "CTRL|ALT" },
 
   -- Optional: default ns + absolute kubectl if GUI PATH can't find it
   kube = { namespace = nil, kubectl = nil, confirm_mutate = true },
@@ -140,10 +153,12 @@ wezai.apply_to_config(config, {
   -- Optional: absolute terraform if GUI PATH can't find it
   tf = { terraform = nil, confirm_mutate = true },
 
+  -- Optional: ZIP for @weather (Open-Meteo). Prefer WEZAI_WEATHER_ZIP or @weather:zip
+  -- (saved under ~/.local/share/wezai/weather.json — does not rewrite this file).
+  weather = { zip = nil, country = "US", units = "auto" },
+
   -- Dialect (fish/zsh/bash/…) is auto-appended from the active shell pane / $SHELL.
-  system_prompt = "You are a concise terminal assistant. Provide direct commands or brief explanations. "
-    .. "Warn of dangerous commands. Avoid unnecessary verbosity. Prefer interactive commands that require "
-    .. "user verification before proceeding when possible.",
+  -- system_prompt = "You are a concise terminal assistant. …",
 
   ai_pane = { enabled = true, direction = "Right", size_percent = 35, pad_cols = 2 },
   history = {
@@ -191,13 +206,15 @@ plugin/
   git.lua        -- @git action catalog
   kube.lua       -- @kube kubectl catalog
   tf.lua         -- @tf terraform catalog
+  weather.lua    -- @weather Open-Meteo catalog
   context.lua    -- @ / # parsing + dir walk + token budget
   edit.lua       -- wezai dotfile backups, diffs, apply confirm
   composer.lua / composer.py  -- CTRL+I ask pane (AI log stays visible)
   files.lua      -- fuzzy @pick / #pick
   shell.lua      -- dialect, risk gate, clipboard
   util.lua
-  settings.lua   -- defaults + user merge
+  settings.lua   -- defaults + wezai.env / process env / user merge
+  version.lua    -- bundled semver (palette / pane banner)
   stats.lua      -- token/model usage DB
   providers/     -- chat_http, gemini_api, ollama_bin, lms_bin
 ```

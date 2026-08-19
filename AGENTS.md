@@ -19,14 +19,25 @@ Do **not** use `CTRL+SHIFT+T` (or `key = "t", mods = "CTRL|SHIFT"`) for wezai �
 - Terraform palette default is **`CTRL+ALT+T`** (`keybinding_tf` in `settings.lua`).
 - If you add another `T`-based binding, keep it off `CTRL|SHIFT`.
 
-Other WezTerm defaults to treat carefully when picking shortcuts (non-exhaustive): `CTRL+SHIFT+W` (close tab), `CTRL+SHIFT+F` (search), `CTRL+SHIFT+P` (wezai already overrides for its palette — do not casually reassign).
+### `CTRL+SHIFT+W` is reserved
+
+| Shortcut | Owner | Meaning |
+|----------|--------|---------|
+| **`CTRL+SHIFT+W`** | **WezTerm (reserved)** | **`CloseCurrentTab`** |
+
+Do **not** use `CTRL+SHIFT+W` (or `key = "w", mods = "CTRL|SHIFT"`) for wezai — including `@weather`.
+
+- Weather palette default is **`CTRL+ALT+W`** (`keybinding_weather` in `settings.lua`).
+- If you add another `W`-based binding, keep it off `CTRL|SHIFT`.
+
+Other WezTerm defaults to treat carefully when picking shortcuts (non-exhaustive): `CTRL+SHIFT+F` (search), `CTRL+SHIFT+P` (wezai already overrides for its palette — do not casually reassign).
 
 ---
 
 ## Keybinding checklist (before shipping a new shortcut)
 
 1. Check [WezTerm default keys](https://wezterm.org/config/default-keys.html) for conflicts.
-2. Prefer `CTRL|SHIFT` + a free letter for catalog scopes (`G` git, `K` kube, `H` history) — **not `T`**.
+2. Prefer `CTRL|SHIFT` + a free letter for catalog scopes (`G` git, `K` kube, `H` history) — **not `T`** (SpawnTab) or **`W`** (CloseCurrentTab).
 3. Update `settings.lua` defaults, `init.lua` bind site, and README / GUIDE / SPECS tables together.
 4. Call out any intentional override of a WezTerm default in those docs.
 
@@ -48,7 +59,7 @@ Prefer instruction-tuned chat/coder models that follow “JSON only” (e.g. `qw
 
 ### `timeout` vs cold model load
 
-Default `timeout` is **120s** (`settings.lua`). For large local models over `type = "http"` (Ollama OpenAI-compatible `/v1/chat/completions`):
+Default `timeout` is **300s** (`settings.lua`) so local Ollama cold loads are less likely to abort. For huge GGUFs over `type = "http"` (Ollama OpenAI-compatible `/v1/chat/completions`) you may still want **600**:
 
 1. `/api/tags` can be instant while chat is still **0 bytes** until `llama-server` finishes load + warmup.
 2. curl `--max-time` disconnect mid-load → Ollama logs `client connection closed before llama-server finished loading` and **aborts** the load.
@@ -59,12 +70,12 @@ Raise `timeout` to **300–600** for big local GGUFs, or pre-warm (`ollama run �
 ### Config reload / local checkout
 
 - Prefer `plugin.require("/absolute/path/to/wezai")` while developing; **do not** call `wezterm.plugin.update_all()` on every reload.
-- GitHub installs: run `update_all()` once after pulling, then reload.
+- GitHub installs: palette **Update wezai plugin**, or run `update_all()` once from the debug overlay, then reload.
 
 ---
 
 ## Related pitfalls
 
-- Plugin modules load via fingerprint scan in `init.lua`. Prefer the **most complete** install (`tf.lua`, etc.) so a stale local checkout cannot hide new catalogs.
-- After merging catalog work to GitHub installs: users need `wezterm.plugin.update_all()` + config reload. Log line should include `tf.lua ok` when present.
+- Plugin modules load via fingerprint scan in `init.lua`. Prefer the **most complete** install (`tf.lua`, `weather.lua`, etc.) so a stale local checkout cannot hide new catalogs.
+- After merging catalog work to GitHub installs: users need palette **Update wezai plugin** (or `update_all()` + config reload). Log line should include `tf.lua ok` / `weather.lua ok` when present.
 - Shell vs AI pane, provider contract, and safety rules: see SPECS §4.

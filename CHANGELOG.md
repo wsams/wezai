@@ -1,3 +1,17 @@
+# [1.11.0](https://github.com/wsams/wezai/compare/v1.10.0...v1.11.0) (2026-08-19)
+
+
+### Features
+
+* env-file config, palette plugin update, and bundled version ([#22](https://github.com/wsams/wezai/issues/22)) ([a51c13c](https://github.com/wsams/wezai/commit/a51c13c39daa833a01cf41270e28cac9f25db7e8))
+
+# [1.10.0](https://github.com/wsams/wezai/compare/v1.9.0...v1.10.0) (2026-08-19)
+
+
+### Features
+
+* **weather:** add Open-Meteo catalog with plugin-set zip ([68f3f92](https://github.com/wsams/wezai/commit/68f3f92b541e5542ba2af13199cbdf702a5c7ba2))
+
 # [1.9.0](https://github.com/wsams/wezai/compare/v1.8.0...v1.9.0) (2026-08-07)
 
 

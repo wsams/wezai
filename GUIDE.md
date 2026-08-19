@@ -1,6 +1,6 @@
 # wezai guide
 
-Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `@tf`, `@history`, and file edits.
+Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `@tf`, `@weather`, `@history`, and file edits.
 
 ---
 
@@ -18,6 +18,7 @@ Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `
 | `CTRL+SHIFT+G` | Same palette, pre-filtered to `@git` |
 | `CTRL+SHIFT+K` | Same palette, pre-filtered to `@kube` |
 | `CTRL+ALT+T` | Same palette, pre-filtered to `@tf` |
+| `CTRL+ALT+W` | Same palette, pre-filtered to `@weather` |
 | `CTRL+SHIFT+H` | Same palette, pre-filtered to `@history` |
 
 You do **not** need `CTRL+I` before the palette. From the shell: `CTRL+SHIFT+P` → type → Enter.
@@ -104,6 +105,7 @@ Undo: palette → **Undo last edit**.
 | `@git:diff` | `@git:diff write a PR summary` |
 | `@tf:state` | `@tf:state what’s orphaned?` |
 | `@tf:validate` | `@tf:validate why is this failing?` |
+| `@weather:now` | `@weather should I bring a jacket?` |
 | `@dir:.` | `@dir:src what modules exist?` |
 | `@history` | `@history what docker commands did I run?` |
 | `@history:40` | `@history:40 summarize recent work` |
@@ -116,7 +118,7 @@ Bare `@git:status` / `@tf:validate` / `@history` (nothing else) run **actions** 
 
 ## Command palette (`CTRL+SHIFT+P`)
 
-Palette titles and the AI output pane show the installed wezai version (semantic-release from `package.json`, plus a short git sha when available — e.g. `wezai v1.7.0+fc6d5b5`). After `wezterm.plugin.update_all()` + config reload, that label should change so you can confirm you pulled the new checkout.
+Palette titles and the AI output pane show the installed wezai version (bundled `plugin/version.lua`, plus a short git sha when the checkout is visible — e.g. `wezai v1.10.0+fc6d5b5`). After **Update wezai plugin** (or `wezterm.plugin.update_all()` + config reload), that label should change so you can confirm you pulled the new checkout. If you ever saw `wezai ?`, the plugin Lua loaded but `package.json` / git were not on the path (common on Flatpak / Bazzite); current wezai ships `version.lua` next to the Lua modules so the semver still shows.
 
 Type to fuzzy-filter. Labels start with namespaces so filtering is easy:
 
@@ -126,6 +128,7 @@ Type to fuzzy-filter. Labels start with namespaces so filtering is easy:
 | `@git:soft` / `@git:rebase` | Soft reset / interactive rebase (any N) |
 | `@kube` | All kubectl actions |
 | `@tf` | All terraform actions |
+| `@weather` | Open-Meteo current / forecast / set zip |
 | `@history` | Recent shell / AI commands |
 | `Ask` / `Fix` / `model` | Core helpers |
 
@@ -141,9 +144,10 @@ Type to fuzzy-filter. Labels start with namespaces so filtering is easy:
 | **Undo last edit** | Restore last `#` write from its wezai backup (or in-memory prior text if backups are off) |
 | **Copy last command** | Clipboard: last AI command, else shell history, else scrollback |
 | **Re-ask last question (shorter)** | Same question, shorter answer |
-| **Pick model…** | Switch model for next requests (`models` list) |
+| **Pick model…** | Switch model for next requests (`models` list / `WEZAI_MODELS`) |
 | **Compact chat (keep @/# files)** | Shrink conversation + sticky selection; keep pinned files |
 | **Clear chat + file context** | Wipe turns, selections, drafts, and `@`/`#` pins |
+| **Update wezai plugin** | `wezterm.plugin.update_all()` then reload config (GitHub installs). Prefer this over uncommenting `update_all()` in `wezterm.lua`. |
 
 ---
 
@@ -233,7 +237,7 @@ Show/AI actions run `kubectl` from WezTerm’s process (not your shell pane). If
 | Per action (one-shot) | Ask → `@kube:pods kube-system` or `@kube:pods/kube-system` |
 | All namespaces | `@kube:pods -A` or `@kube:pods-all` |
 | Persist in kubectl | `@kube:use-ns kube-system` (sets current-context namespace) |
-| Persist in wezai config | `kube = { namespace = "kube-system" }` in `apply_to_config` |
+| Persist in wezai config | `WEZAI_KUBE_NS=kube-system` in `wezai.env`, or `kube = { namespace = "kube-system" }` |
 
 Default is the kubectl current-context namespace (`default` on docker-desktop unless you change it). Placeholders like `<pod>` / `<file>` are prompted. **Mutating** actions (`apply`, `delete-f`, `restart`, `scale`) always confirm. AI helpers only gather read-only output (`get` / events) and steer toward safe next steps.
 
@@ -291,7 +295,7 @@ Ask-with-context attach tokens: `@kube:pods`, `@kube:events`, `@kube:all`, `@kub
 
 Open via `CTRL+SHIFT+P` → type `@tf`, or `CTRL+ALT+T`, or Ask → `@tf` / `@tf:validate`.
 
-> **Not seeing `@tf`?** The catalog ships in wezai ≥ 1.5.0. Run `wezterm.plugin.update_all()` (debug overlay or temporarily from config), reload WezTerm, then open the palette and type `tf`. Check the log for `wezai: load path … (tf.lua ok)`. `CTRL+SHIFT+T` is WezTerm’s **new tab** — the tf shortcut is `CTRL+ALT+T`.
+> **Not seeing `@tf`?** The catalog ships in wezai ≥ 1.5.0. Palette → **Update wezai plugin** (or `wezterm.plugin.update_all()` from the debug overlay), then type `tf`. Check the log for `wezai: load path … (tf.lua ok)`. `CTRL+SHIFT+T` is WezTerm’s **new tab** — the tf shortcut is `CTRL+ALT+T`.
 
 Commands use the **shell pane cwd** (`terraform -chdir=…` for show/AI). wezai resolves the `terraform` binary the same way as kubectl (Homebrew/asdf/mise + login shell), or set `tf.terraform = "/usr/local/bin/terraform"`.
 
@@ -337,6 +341,59 @@ CTRL+I → @tf:debug   (after a failed plan — select the error first)
 ```
 
 Ask-with-context attach tokens: `@tf:state`, `@tf:validate`, `@tf:output`, `@tf:workspace`, `@tf:providers`, `@tf:sources`.
+
+---
+
+## `@weather` actions
+
+Open via `CTRL+SHIFT+P` → type `@weather`, or `CTRL+ALT+W`, or Ask → `@weather` / `@weather:now`.
+
+Forecast comes from **Open-Meteo** (no API key). You only need a ZIP / postal code.
+
+**Set the zip from the plugin** (this is the intended way to change it later):
+
+```
+CTRL+ALT+W → @weather:zip
+```
+
+Enter `90210`, or `90210, US`, or `M5V 2T6, CA`. wezai geocodes it, then saves `~/.local/share/wezai/weather.json`. That overlay **overrides** `weather.zip` in `wezterm.lua` and survives reloads. It does **not** rewrite your WezTerm config.
+
+Optional seed before the first `@weather:zip` — prefer `WEZAI_WEATHER_ZIP` in `~/.config/wezterm/wezai.env` (Flatpak/Bazzite GUI apps often miss `.bashrc` env):
+
+```bash
+WEZAI_WEATHER_ZIP=90210
+WEZAI_WEATHER_COUNTRY=US
+WEZAI_WEATHER_UNITS=auto
+```
+
+Lua still works if you want it in `wezterm.lua`: `weather = { zip = "90210", country = "US", units = "auto" }`.
+
+`@weather:zip clear` (or `none`) drops the overlay so the wezterm.lua value applies again. `@weather:where` shows effective zip, overlay vs config, and resolved place.
+
+`CTRL+SHIFT+W` is WezTerm’s **close tab** — the weather shortcut is `CTRL+ALT+W`.
+
+### Show (no model)
+
+| Action | Meaning |
+|--------|---------|
+| `@weather:now` | Current conditions, next hours, today/tomorrow |
+| `@weather:forecast` | Current + 7-day daily |
+| `@weather:where` | Configured zip / resolved coordinates |
+
+### Config from the plugin
+
+| Action | Notes |
+|--------|--------|
+| `@weather:zip` | Prompt for postal code |
+| `@weather:zip 90210` | One-shot set |
+
+```
+CTRL+ALT+W → @weather:now
+CTRL+I → @weather should I bring a jacket?
+CTRL+I → @weather:forecast what’s the weekend look like?
+```
+
+Bare `@weather` opens the weather palette. Add a question after `@weather` / `@weather:now` / `@weather:forecast` to attach conditions and ask the model.
 
 ---
 
@@ -438,6 +495,19 @@ CTRL+I → @tf:generate aws_s3_bucket with versioning enabled
 
 Then write it with `#main.tf …` after reviewing the suggestion.
 
+### “What’s the weather?”
+
+```
+CTRL+ALT+W → @weather:zip     # once — e.g. 90210
+CTRL+ALT+W → @weather:now
+```
+
+Or attach it to a question:
+
+```
+CTRL+I → @weather should I bring a jacket tonight?
+```
+
 ---
 
 ## Safety
@@ -460,8 +530,11 @@ Then write it with `#main.tf …` after reviewing the suggestion.
 | Two right panes | Close extras; reload config — wezai reattaches one output pane |
 | Palette is WezTerm’s, not wezai | Reload config; wezai overrides `CTRL+SHIFT+P`. Or set `keybinding_palette` |
 | Empty `@history` | Run commands in fish/zsh/bash first; check `history.tail_bytes` / `palette_n` |
-| No `@tf` in palette | Need wezai ≥ 1.5.0 with `plugin/tf.lua`. `wezterm.plugin.update_all()` then reload. Log should say `tf.lua ok`. Shortcut is `CTRL+ALT+T` (not `CTRL+SHIFT+T`) |
+| No `@tf` in palette | Need wezai ≥ 1.5.0 with `plugin/tf.lua`. Palette → **Update wezai plugin**, then reload. Log should say `tf.lua ok`. Shortcut is `CTRL+ALT+T` (not `CTRL+SHIFT+T`) |
+| No `@weather` / “No zip set” | Need `plugin/weather.lua`. Set `@weather:zip 90210` or `WEZAI_WEATHER_ZIP=90210` in `wezai.env`. Shortcut is `CTRL+ALT+W` (not `CTRL+SHIFT+W`) |
+| Palette title is `wezai ?` | Stale plugin without `plugin/version.lua`. Update via the palette action; log should show `wezai v1.10.0…` not `?` |
 | Plugin not loading | `require` local path or publish URL; ensure cache has `plugin/palette.lua` |
+| Env vars from `.bashrc` ignored | GUI / Flatpak WezTerm (Bazzite) often has a tiny environment. Put keys in `~/.config/wezterm/wezai.env` instead |
 
 ---
 

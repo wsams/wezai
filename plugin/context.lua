@@ -54,6 +54,8 @@ local function is_reserved_ref(raw)
         or raw:match("^kube:") ~= nil
         or raw:match("^tf:") ~= nil
         or raw:match("^terraform:") ~= nil
+        or raw == "weather"
+        or raw:match("^weather:") ~= nil
         or raw:match("^dir:") ~= nil
 end
 
@@ -133,6 +135,12 @@ function M.parse_at_refs(line)
             -- Normalize @terraform:… → tf:… for collect_attach
             if raw:match("^terraform:") then
                 return "synthetic", "tf:" .. (raw:match("^terraform:(.+)$") or "")
+            end
+            return "synthetic", raw
+        end
+        if raw == "weather" or raw:match("^weather:") then
+            if raw == "weather" then
+                return "synthetic", "weather:now"
             end
             return "synthetic", raw
         end
@@ -590,6 +598,25 @@ local function resolve_synthetics(synthetics, window, pane, cwd, config)
                 else
                     table.insert(blocks, {
                         label = "Terraform " .. (syn:match("^tf:(.+)$") or syn),
+                        path = "@" .. syn,
+                        content = content,
+                    })
+                    table.insert(labels, "@" .. syn)
+                end
+            end
+        elseif syn == "weather" or syn:match("^weather:") then
+            local wok, wmod = pcall(require, "weather")
+            if not wok then
+                table.insert(errors, "@" .. syn .. " failed: weather module not loaded (update wezai plugin)")
+            else
+                local content, werr = wmod.collect_attach(syn, config)
+                if werr and werr ~= "" then
+                    table.insert(errors, "@" .. syn .. " failed: " .. werr)
+                elseif content == nil then
+                    table.insert(errors, "@" .. syn .. " failed: empty attach")
+                else
+                    table.insert(blocks, {
+                        label = "Weather " .. (syn:match("^weather:(.+)$") or "now"),
                         path = "@" .. syn,
                         content = content,
                     })
