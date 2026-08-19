@@ -1,3 +1,10 @@
+# [1.12.0](https://github.com/wsams/wezai/compare/v1.11.0...v1.12.0) (2026-08-19)
+
+
+### Features
+
+* persist ask composer, # edits, and session file context ([#21](https://github.com/wsams/wezai/issues/21)) ([234a270](https://github.com/wsams/wezai/commit/234a2706fe3b50b42a7176e91013a12edc86ba11)), closes [#path](https://github.com/wsams/wezai/issues/path)
+
 # [1.11.0](https://github.com/wsams/wezai/compare/v1.10.0...v1.11.0) (2026-08-19)
 
 
