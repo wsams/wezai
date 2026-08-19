@@ -1,3 +1,10 @@
+## [1.12.1](https://github.com/wsams/wezai/compare/v1.12.0...v1.12.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* never spawn git while resolving wezai version at load ([d2e591d](https://github.com/wsams/wezai/commit/d2e591dc9daee5113730a5b7b61420fe24f3cd10))
+
 # [1.12.0](https://github.com/wsams/wezai/compare/v1.11.0...v1.12.0) (2026-08-19)
 
 
