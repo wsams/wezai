@@ -16,9 +16,9 @@ User-facing walkthroughs: [GUIDE.md](GUIDE.md). Install / config sketch: [README
 
 **wezai** is a WezTerm plugin that puts an AI assistant and utility catalogs next to the user’s shell:
 
-- **Ask** — natural-language CLI help with attachable context (`@file`, selection, git, kube, tf, history).
-- **Edit** — one-shot file create/rewrite via `@@path` with unified diff + confirm.
-- **Palette** — fuzzy `InputSelector` (`CTRL+SHIFT+P`) for Ask helpers, `@git`, `@kube`, `@tf`, `@history`.
+- **Ask** — natural-language CLI help with attachable context (`@file`, `@dir/`, selection, git, kube, tf, history). CTRL+I opens a **composer pane** under the shell so the right-hand AI log stays visible; drafts persist if you Esc.
+- **Edit** — create/rewrite via `#path` (legacy `@@path`) with unified diff + confirm. `#dir/` pins a tree of editable files.
+- **Palette** — fuzzy `InputSelector` (`CTRL+SHIFT+P`) for Ask helpers, `@git`, `@kube`, `@tf`, `@history`, Compact, Clear.
 - **AI output pane** — right-side keep-alive pane for answers, diffs, git/kube/tf show output (not for running shell/git).
 - **Safety** — secret redaction, risky-command confirms, mutate confirms for git/kube/tf/edit.
 
@@ -54,14 +54,16 @@ Public entrypoint: `plugin/init.lua` → `apply_to_config(wezterm_config, user_c
 ```
 plugin/
   init.lua          -- bootstrap, keybindings, ask/edit orchestration, palette hooks
-  settings.lua      -- defaults + merge (nested tables: ai_pane, history, git, kube, tf, stats, files, backup)
+  settings.lua      -- defaults + merge (nested tables: ai_pane, history, git, kube, tf, stats, files, backup, composer, context)
   util.lua          -- paths, files, JSON parse, run_cmd (pcall), resolve_executable, large-file read
   ui.lua            -- AI pane lifecycle, styling, InputSelector, usage banner
-  session.lua       -- per-tab chat memory + history events + last edit
+  session.lua       -- per-tab chat memory + pinned @/# files + draft + last edit
   shell.lua         -- shell detect, OS platform hint, risk gate, clipboard, send_command
-  context.lua       -- @ / @@ parsing, redaction, request preparation
-  edit.lua          -- backup, unified diff, apply/undo
-  files.lua         -- fuzzy file list (fd → git ls-files → find) + @pick
+  context.lua       -- @ / # parsing (@@ alias), dir walk, token budget, redaction
+  edit.lua          -- wezai dotfile backups, unified diff, apply/undo
+  files.lua         -- fuzzy file+dir list (fd → git ls-files → find) + @pick / #pick
+  composer.lua      -- CTRL+I split composer (does not cover the AI pane)
+  composer.py       -- readline-less TUI: live @/# fuzzy paths, draft, OSC user vars
   history.lua       -- fish/zsh/bash history + scrollback + session events
   git.lua           -- @git action catalog
   kube.lua          -- @kube action catalog
@@ -123,7 +125,7 @@ Edit responses:
 - `message`, `file` (full file contents), `command` (null)
 - Aliases accepted for the file body if `file` is missing/empty: `content`, `new_content` (models often invent these).
 
-`settings.REPLY_CONTRACT` is appended to custom `system_prompt` if it does not already mention `"message"`. Edit requests replace `system_prompt` with `context.EDIT_SYSTEM_PROMPT` (user style prompt is not used for `@@`).
+`settings.REPLY_CONTRACT` is appended to custom `system_prompt` if it does not already mention `"message"`. Edit requests replace `system_prompt` with `context.EDIT_SYSTEM_PROMPT` (user style prompt is not used for `#` / `@@`). Multi-file edits accept a `files` array (`path` + `content`); a single `file` field still works.
 
 Parsing (`util.parse_json_response`): try raw → fenced body → fence-stripped → first top-level `{…}` via `util.extract_json_object` (handles prose wrappers from chatty/thinking models). Prefer **instruct** models that emit JSON only; thinking models are a poor fit (see [AGENTS.md](AGENTS.md)).
 
@@ -149,9 +151,9 @@ Command labels print as `(fish/macos)` style when showing suggested commands.
 - `context.redact` strips common secrets (keys, tokens, JWTs, private keys) before prompts/history.
 - `shell.is_risky` + confirm before sending dangerous commands (includes kubectl mutate/exec patterns, terraform apply/destroy/import/state-rm/force-unlock, and git force/push/reset/etc.).
 - Edit apply and kube/tf mutate actions confirm unless config disables confirms. Edit confirm embeds the unified diff in the overlay (WezTerm InputSelector covers the tab).
-- Edit backups are timestamped and configurable (`backup.enabled` / `backup.dir` / `backup.suffix`); Undo uses the bak file or in-memory prior content.
+- Edit backups are timestamped **dotfiles** with `wezai` in the name (`backup.enabled` / `backup.dir` / `backup.suffix` / `backup.dotfile`). Default: `.notes.txt.<YYYYMMDD-HHMMSS>.wezai.bak` next to the target. Undo uses the bak file or in-memory prior content. Directory walks skip `*wezai*.bak`.
 - Kube AI helpers must prefer **read-only** next steps (get/describe/logs); never bake org-specific cluster/namespace names into the catalog.
-- Terraform AI helpers must prefer **read-only** next steps (validate/fmt/plan/state list) and `@@` file edits; never bake account/org-specific names into the catalog.
+- Terraform AI helpers must prefer **read-only** next steps (validate/fmt/plan/state list) and `#` file edits; never bake account/org-specific names into the catalog.
 
 ### 4.7 Child processes & Lua returns
 
@@ -165,31 +167,42 @@ Command labels print as `(fish/macos)` style when showing suggested commands.
 
 ### 5.1 Ask (`keybinding`, default often remapped to CTRL+I by users)
 
-Flow: `PromptInputLine` → parse refs → `context.prepare_request` → `providers.ask` → print message/command → optional `shell.send_command`.
+Flow: **composer pane** (split of the shell, AI log stays visible) → parse refs → `context.prepare_request` → `providers.ask` → print message/command → optional `shell.send_command`.
+
+If `composer.enabled = false` or python3/`composer.py` is missing, fall back to WezTerm `PromptInputLine` (full-window overlay). Esc in the composer **saves a draft** and restores it on the next CTRL+I.
 
 Supports:
 
 | Token | Behavior |
 |-------|----------|
-| `@path` / `@"./path with spaces"` | Attach file (read-only) |
-| `@@path instruction` | Create or rewrite file (unified diff in confirm overlay + AI pane) |
-| `@` / `@pick` / `@@` / `@@pick` | Fuzzy file picker (`files.lua`) |
-| `@clipboard` / `@selection` | Clipboard / selection |
+| `@path` / `@"./path with spaces"` | Attach file (read-only); **pinned** for the tab until Clear |
+| `@dir/` (trailing slash or a directory path) | Walk the tree, attach relevant files up to the token budget |
+| `#path instruction` | Create or rewrite file (unified diff + confirm). New files OK if the parent dir exists |
+| `#dir/` | Pin every attachable file under the directory as **edit** targets |
+| `@@path` | Legacy alias of `#path` |
+| `@` / `@pick` / `#` / `#pick` / `@@` / `@@pick` | Fuzzy file picker (`files.lua`) |
+| `@clipboard` / `@selection` | Clipboard / selection (selection is sticky until Compact) |
 | `@git` / `@git:id` | Git picker or action (see §5.4) |
 | `@kube` / `@kube:id` / `@kube:pods/<ns>` | Kube picker, action, or attach with optional ns (see §5.5) |
 | `@tf` / `@tf:id` / `@terraform:id` | Terraform picker, action, or attach (see §5.6) |
 | `@history` / bare history ref | History palette / attach |
-| `@dir:path` | Shallow directory listing |
+| `@dir:path` | Shallow directory **listing** only (not file contents) |
+| `compact` / `/compact` | Compact conversation + sticky selection; keep `@`/`#` pins |
+| `clear` / `/clear` | Wipe turns, selections, drafts, and file pins |
 
-**Path parsing:** unquoted `@refs` strip trailing sentence punctuation (`?!. ,;:)` …) so `@package.json?` works. Quoted paths are literal.
+**Composer autocomplete:** typing `@` or `#` lists files and directories under the shell cwd (prefix then fuzzy). Tab inserts the highlighted path; Enter accepts an incomplete match, or sends the line when the token is already exact / the cursor is outside a ref. `@git:` / `@kube:` / `@tf:` / `@history` are reserved and do not open the file list.
 
-**New files:** `@@newfile.txt …` creates if parent dir exists (`is_new`, empty original, Create confirm).
+**Path parsing:** unquoted `@`/`#` refs strip trailing sentence punctuation (`?!. ,;:)` …) so `@package.json?` works. Quoted paths are literal. `#` is only a ref at token start when the next character is path-like (not `# heading` with a space).
 
-**Edit confirm:** WezTerm `InputSelector` covers the tab, so the unified diff is embedded in the selector choices (Apply / Cancel first; colored diff preview below). The full diff is also printed in the AI pane. Selecting a preview row re-opens the selector.
+**New files:** `#newfile.txt …` creates if parent dir exists (`is_new`, empty original, Create confirm).
 
-**Backups:** On Apply, write a timestamped backup unless `backup.enabled = false`. Default name: `<file>.<YYYYMMDD-HHMMSS>.wezai.bak` next to the target, or under `backup.dir` when set. Undo restores from the backup path, or from in-memory prior content when backups are disabled.
+**Edit confirm:** WezTerm `InputSelector` covers the tab, so the unified diff is embedded in the selector choices (Apply / Cancel first; colored diff preview below). The full diff is also printed in the AI pane. Selecting a preview row re-opens the selector. Multi-file `#dir/` edits print every diff in the AI pane and use one Apply-all confirm.
 
-**Large `@` files:** soft budget `max_file_bytes` (default 200000). Oversized attaches use head+tail (`files.large_file = "head_tail"`) with truncation markers. `@@` edit still requires the full file under the limit.
+**Backups:** On Apply, write a timestamped **dotfile** unless `backup.enabled = false`. Default name: `.file.<YYYYMMDD-HHMMSS>.wezai.bak` next to the target (`backup.dotfile = true`), or under `backup.dir` when set. Undo restores the last apply (all files in a multi-edit batch).
+
+**Large `@` files / directories:** soft budget `max_file_bytes` (default 200000) per file; directory walks also honor `context.max_dir_files` / `context.max_dir_bytes` / `context.max_prompt_tokens`. Oversized attaches use head+tail (`files.large_file = "head_tail"`). `#` edit still requires the full file under the per-file limit. If the packed prompt exceeds `context.confirm_tokens`, wezai warns and asks for confirmation (once per session until Clear).
+
+**Session:** `@` and `#` pins persist across CTRL+I turns in the same tab. Compact does **not** drop file pins — only conversation turns and sticky selection/scrollback extras. Clear drops everything.
 
 **Share pane history:** `keybinding_with_pane` attaches scrollback to the prompt.
 
@@ -203,7 +216,7 @@ Unified fuzzy `InputSelector` with scopes:
 - `tf` (`CTRL+ALT+T` — not `CTRL+SHIFT+T`, which is WezTerm SpawnTab)
 - `history` (`CTRL+SHIFT+H`) and filtered history scopes
 
-Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, Attach/Edit file (fuzzy), Undo edit, Copy last command, Shorter re-ask, Pick model, Clear chat memory.
+Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, Attach/Edit file (fuzzy), Undo edit, Copy last command, Shorter re-ask, Pick model, **Compact chat (keep @/# files)**, **Clear chat + file context**.
 
 ### 5.3 History
 
@@ -290,7 +303,7 @@ Bare `@tf:id` = run action; show actions with trailing text fall through to atta
 - Shell (no model): `init`, `fmt`, `plan`, `apply`, `destroy`, `refresh`, `import`, `workspace-select`, `workspace-new`, `state-rm`, `unlock`.
 - AI: `generate`/`gen` — HCL from description (+ existing `*.tf` context); `debug`/`diagnose`/`fix` — selection/scrollback + validate/state/sources; `explain`; `review`.
 
-Mutate confirms when `tf.confirm_mutate` (default true) for apply/destroy/import/state-rm; unlock always confirms. AI helpers steer toward validate/fmt/plan/`@@` edits — never bake apply/destroy into suggested commands unless the user clearly asked to mutate.
+Mutate confirms when `tf.confirm_mutate` (default true) for apply/destroy/import/state-rm; unlock always confirms. AI helpers steer toward validate/fmt/plan/`#` edits — never bake apply/destroy into suggested commands unless the user clearly asked to mutate.
 
 #### Ask attach tokens
 
@@ -306,7 +319,15 @@ Supported synthetics:
 
 ### 5.8 Session
 
-Per-tab: chat turns (capped by `chat_max_turns`), last question/command, last edit (for undo), history events.
+Per-tab:
+
+- Chat turns (safety-capped; use **Compact** to shrink — not a silent 6-turn trim)
+- Pinned `@` attach paths and `#` edit targets (re-read from disk each turn; survive Compact)
+- Sticky selection / extra context (cleared by Compact)
+- Composer draft (Esc in CTRL+I)
+- Last question/command, last edit batch (for undo), history events
+
+**Compact** folds older turns into a recap and drops sticky selection text. **Clear** wipes pins, draft, turns, and extras.
 
 ---
 
@@ -330,7 +351,7 @@ Single-letter keys are also bound with opposite case for WezTerm quirks.
 
 ## 7. Configuration surface
 
-Merged in `settings.finalize`. Nested keys deep-merged: `ai_pane`, `history`, `git`, `kube`, `tf`, `stats`, `files`, `backup`.
+Merged in `settings.finalize`. Nested keys deep-merged: `ai_pane`, `history`, `git`, `kube`, `tf`, `stats`, `files`, `backup`, `composer`, `context`.
 
 Important fields (see `settings.lua` for full defaults):
 
@@ -340,9 +361,10 @@ Important fields (see `settings.lua` for full defaults):
 | `show_loading` | When true (default), Ask/Edit scroll timed status in the AI pane while waiting (model, endpoint, elapsed/timeout %, phase hints). Set `false` to silence. |
 | `ollama_path`, `lms_path` | CLI backends |
 | `system_prompt` | Style; dialect/OS appended per request; JSON contract appended if needed |
-| `max_file_bytes`, `files.*` | Attach budget + large-file policy |
+| `max_file_bytes`, `files.*`, `context.*` | Attach budget, large-file policy, dir-walk / token confirm |
+| `composer.enabled`, `composer.size_percent` | CTRL+I split composer (default on; ~32% of the shell pane) |
 | `ai_pane.*` | Split direction/size/pad |
-| `backup.enabled`, `backup.suffix`, `backup.dir` | Edit backups (default on; suffix `.wezai.bak`; `dir` nil = alongside file). `backup = false` disables. Legacy `backup_suffix` still maps to `backup.suffix` |
+| `backup.enabled`, `backup.suffix`, `backup.dir`, `backup.dotfile` | Edit backups (default on; suffix `.wezai.bak`; `dotfile` default true → `.name.<ts>.wezai.bak`). `backup = false` disables. Legacy `backup_suffix` still maps to `backup.suffix` |
 | `require_edit_confirm`, `require_risk_confirm` | Safety toggles |
 | `kube.namespace`, `kube.kubectl`, `kube.confirm_mutate`, `kube.max_attach_bytes` | kubectl defaults / binary / attach cap |
 | `tf.terraform`, `tf.confirm_mutate`, `tf.max_attach_bytes` | terraform binary / mutate confirms / attach cap |
@@ -406,8 +428,14 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 ## 12. Testing checklist (manual)
 
 - [ ] Ask with `@package.json?` attaches `package.json` (punctuation stripped).
+- [ ] `@plugin/` walks the directory; oversized packs confirm before send.
+- [ ] `#notes.txt sort lines` (and legacy `@@notes.txt`) shows diff confirm.
+- [ ] `#newfile.txt create lorem` creates file after Apply/Create.
+- [ ] CTRL+I composer splits the **shell** pane (AI log on the right stays visible); Esc restores a draft.
+- [ ] Typing `@` / `#` in the composer lists cwd files/dirs; Tab completes.
+- [ ] Compact keeps `@`/`#` pins and drops conversation / sticky selection.
+- [ ] Clear drops pins and chat.
 - [ ] `@pick` / palette Attach file opens fuzzy selector.
-- [ ] `@@newfile.txt create lorem` creates file after Apply/Create.
 - [ ] Large `@file` attaches as truncated head+tail, not hard error.
 - [ ] Pick model / palette actions reuse **one** AI pane (no second split).
 - [ ] Palette title and AI pane banner show install version (`wezai v…` / sha).
@@ -424,8 +452,8 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] Local Ollama HTTP: with an unloaded large model, `timeout` ≥ load+warmup still returns JSON (not curl 28 / 0 bytes); second Ask is fast while model stays loaded.
 - [ ] During a multi-minute Ask wait, AI pane scrolls progress with model/endpoint, elapsed vs timeout %, and rotating hints (not only a bare “thinking…” line).
 - [ ] Chatty model wrapping JSON in prose still parses via `extract_json_object` when a single object is present.
-- [ ] `@@` edit accepting `content` alias when `file` is missing still shows diff confirm (diff visible inside the overlay).
-- [ ] Apply writes `<file>.<YYYYMMDD-HHMMSS>.wezai.bak`; `backup.enabled = false` skips bak and Undo still works; `backup.dir` relocates bak files.
+- [ ] `#` / `@@` edit accepting `content` alias when `file` is missing still shows diff confirm (diff visible inside the overlay).
+- [ ] Apply writes `.file.<YYYYMMDD-HHMMSS>.wezai.bak`; `backup.enabled = false` skips bak and Undo still works; `backup.dir` relocates bak files; `backup.dotfile = false` drops the leading dot.
 ---
 
 ## 13. Out of scope / non-goals
@@ -445,7 +473,8 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 | Local Ollama timeout / thinking models / JSON contract | `AGENTS.md` (§ Local HTTP), SPECS §4.4–4.4.1 |
 | Ask / keys / orchestration | `plugin/init.lua` |
 | Defaults / merge | `plugin/settings.lua` |
-| `@` parsing / prepare / attach errors | `plugin/context.lua` |
+| `@` / `#` parsing / prepare / attach errors | `plugin/context.lua` |
+| CTRL+I composer (AI pane stays visible) | `plugin/composer.lua`, `plugin/composer.py` |
 | `run_cmd` / `resolve_executable` | `plugin/util.lua` |
 | Pane / UI | `plugin/ui.lua` |
 | Install version label | `plugin/util.lua` (`version_label` / `brand_with_version`) |

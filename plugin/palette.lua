@@ -91,7 +91,7 @@ function M.show(window, pane, config, opts)
                     H.attach_file(win, p, cfg)
                 end
             end)
-            add(choices, handlers, "core:edit", "Edit file… (@@pick fuzzy)", function(win, p, cfg)
+            add(choices, handlers, "core:edit", "Edit file… (#pick fuzzy)", function(win, p, cfg)
                 if H.edit_file then
                     H.edit_file(win, p, cfg)
                 elseif H.edit then
@@ -118,7 +118,12 @@ function M.show(window, pane, config, opts)
                     H.pick_model(win, p, cfg)
                 end
             end)
-            add(choices, handlers, "core:clear", "Clear chat memory", function(win, p, cfg)
+            add(choices, handlers, "core:compact", "Compact chat (keep @/# files)", function(win, p, cfg)
+                if H.compact then
+                    H.compact(win, p, cfg)
+                end
+            end)
+            add(choices, handlers, "core:clear", "Clear chat + file context", function(win, p, cfg)
                 if H.clear then
                     H.clear(win, p, cfg)
                 end

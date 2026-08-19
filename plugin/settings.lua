@@ -31,18 +31,35 @@ local BASE = {
     type = "http",
     api_key = nil,
     -- Soft budget for @attach (oversized files send head+tail by default).
-    -- @@edit still requires the full file under this limit.
+    -- #edit still requires the full file under this limit.
     max_file_bytes = 200000,
-    -- @@ edit / .gitignore backups. Prefer nested `backup.*`; flat backup_suffix
+    -- # edit / wezai backups. Prefer nested `backup.*`; flat backup_suffix
     -- is still accepted for older configs and mirrored after finalize.
     backup = {
         enabled = true,
         suffix = ".wezai.bak",
+        -- Sibling dotfile `.name.<timestamp>.wezai.bak` (easy to find: *wezai*.bak)
+        dotfile = true,
         -- nil → write next to the target file; or e.g. "~/.local/share/wezai/bak"
         dir = nil,
     },
     backup_suffix = ".wezai.bak",
     ai_pane = { enabled = true, direction = "Right", size_percent = 35, pad_cols = 2 },
+    -- Ask composer (CTRL+I): split of the shell pane so the AI log stays visible.
+    composer = {
+        enabled = true,
+        size_percent = 32,
+    },
+    -- Token budget for @dir walks and large attaches.
+    context = {
+        max_prompt_tokens = 24000,
+        warn_tokens = 6000,
+        confirm_tokens = 12000,
+        chars_per_token = 4,
+        max_dir_files = 80,
+        max_dir_bytes = 800000,
+        compact_chars = 4000,
+    },
     history = {
         max_shell = 500,
         max_session = 50,
@@ -67,7 +84,8 @@ local BASE = {
         confirm_mutate = true,
         max_attach_bytes = 80000,
     },
-    chat_max_turns = 6,
+    chat_max_turns = 40,
+    chat_keep_turns = 2,
     require_edit_confirm = true,
     require_risk_confirm = true,
     -- Usage DB: ~/.local/share/wezai/stats.json (override with stats.path)
@@ -90,6 +108,8 @@ local NESTED = {
     stats = true,
     files = true,
     backup = true,
+    composer = true,
+    context = true,
 }
 
 local function deep_copy_table(t)
@@ -141,6 +161,9 @@ function M.finalize(user)
     end
     if cfg.backup.enabled == nil then
         cfg.backup.enabled = true
+    end
+    if cfg.backup.dotfile == nil then
+        cfg.backup.dotfile = true
     end
     -- Keep flat key in sync for any callers still reading backup_suffix.
     cfg.backup_suffix = cfg.backup.suffix

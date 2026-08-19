@@ -570,7 +570,7 @@ function M.collect_entries(window, pane, config, filter)
     for i = #events, 1, -1 do
         local ev = events[i]
         if ev.kind == "edit" then
-            push("edit", "@@" .. (ev.path or "?") .. " " .. (ev.instruction or ev.text), {
+            push("edit", "#" .. (ev.path or "?") .. " " .. (ev.instruction or ev.text), {
                 runnable = false,
                 path = ev.path,
                 instruction = ev.instruction or ev.text,
@@ -668,7 +668,7 @@ function M.show_actions(window, pane, config, entry)
         table.insert(choices, { id = "insert", label = "Insert — paste at prompt (edit before run)" })
     end
     if entry.kind == "edit" and entry.path then
-        table.insert(choices, { id = "reedit", label = "Re-run edit — @@path with same instruction" })
+        table.insert(choices, { id = "reedit", label = "Re-run edit — #path with same instruction" })
     end
     table.insert(choices, { id = "explain", label = "Explain — ask AI about this" })
     table.insert(choices, { id = "attach", label = "Attach & ask — use as context in a new prompt" })
@@ -686,7 +686,7 @@ function M.show_actions(window, pane, config, entry)
             insert_at_prompt(p, entry.text)
             ui.ai_print(ap, "Inserted at prompt: " .. shorten(entry.text, 100), "success")
         elseif id == "reedit" then
-            local line = "@@" .. entry.path .. " " .. (entry.instruction or entry.text)
+            local line = "#" .. entry.path .. " " .. (entry.instruction or entry.text)
             local ctx = require("context")
             local request, err = ctx.prepare_request(win, p, line, nil, config)
             if err then

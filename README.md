@@ -4,8 +4,9 @@
 
 > **Alpha software.** wezai is in active development and under heavy testing. Behavior and APIs may change. If you hit a bug or have an idea, please [open an issue](https://github.com/wsams/wezai/issues) — reports are welcome and help shape the project. See [CONTRIBUTING.md](CONTRIBUTING.md) for what to include.
 
-- Ask questions with file, clipboard, git, kube, terraform, and selection context  
-- Edit files in one pass (`@@path`) with a unified diff confirm  
+- Ask questions with file, directory, clipboard, git, kube, terraform, and selection context  
+- Edit files in one pass (`#path`, legacy `@@path`) with a unified diff confirm and wezai dotfile backups  
+- CTRL+I composer keeps the AI log visible; `@` / `#` fuzzy-complete paths; context persists until Compact/Clear  
 - One palette (`CTRL+SHIFT+P`) for Ask helpers, `@git:…`, `@kube:…`, `@tf:…`, and `@history`  
 - Shell-aware suggestions, secret redaction, risky-command confirms  
 
@@ -59,7 +60,7 @@ WezTerm clones plugins into its cache on first `require`. After you pull new com
 
 | `type` | What you need |
 |--------|----------------|
-| `"http"` | OpenAI-compatible `api_url` + `model` (+ `api_key` if required). For Ollama: `http://127.0.0.1:11434/v1/chat/completions`, raise `timeout` (e.g. 300–600) for large cold loads, and prefer instruct models over “thinking” GGUFs (Ask/`@@` need JSON — see SPECS §4.4). |
+| `"http"` | OpenAI-compatible `api_url` + `model` (+ `api_key` if required). For Ollama: `http://127.0.0.1:11434/v1/chat/completions`, raise `timeout` (e.g. 300–600) for large cold loads, and prefer instruct models over “thinking” GGUFs (Ask/`#` edits need JSON — see SPECS §4.4). |
 | `"local"` | LM Studio CLI (`lms_path`) |
 | `"ollama"` | `ollama_path` + `model` |
 | `"google"` | Gemini `api_key` + `model` (uses curl + WezTerm JSON) |
@@ -69,7 +70,7 @@ WezTerm clones plugins into its cache on first `require`. After you pull new com
 
 | Key | Action |
 |-----|--------|
-| `CTRL+I` | **Ask** — type a question or `@` / `@@` ref |
+| `CTRL+I` | **Ask** — composer under the shell (`@` attach, `#` edit). Esc saves a draft |
 | `CTRL+SHIFT+E` | **Ask** with pane scrollback attached as context |
 | `CTRL+SHIFT+P` | **Palette** — type `@git`, `@kube`, `@tf`, `@history`, or `Ask` to filter |
 | `CTRL+SHIFT+G` | Palette scoped to `@git` |
@@ -83,7 +84,8 @@ Stay on your **shell** pane. The right split is **output only** (answers, diffs,
 CTRL+SHIFT+P  →  type @git:status  →  Enter
 CTRL+SHIFT+P  →  type @tf:validate →  Enter
 CTRL+I        →  @README.md is this safe?  →  Enter
-CTRL+I        →  @@notes.txt sort the lines  →  review diff → Apply
+CTRL+I        →  #notes.txt sort the lines  →  review diff → Apply
+CTRL+I        →  @plugin/   (pins the tree) →  how is loading wired?
 ```
 
 More examples: [GUIDE.md](GUIDE.md).
@@ -94,10 +96,13 @@ More examples: [GUIDE.md](GUIDE.md).
 
 | In the Ask prompt | Meaning |
 |-------------------|---------|
-| `@file` | Attach a file (read-only). Trailing `?!.` etc. are ignored (`@package.json?` works) |
+| `@file` | Attach a file (read-only, **pinned** until Clear). Trailing `?!.` etc. are ignored (`@package.json?` works) |
+| `@dir/` | Walk the directory and attach files (token budget + confirm if large) |
 | `@` / `@pick` | Fuzzy file picker (type to filter), then ask |
-| `@@file instruction` | Create or rewrite the file (diff + confirm). New files OK if the parent dir exists |
-| `@@` / `@@pick` | Fuzzy pick a file to edit, then type the instruction |
+| `#file instruction` | Create or rewrite the file (diff + confirm). New files OK if the parent dir exists |
+| `#dir/` | Pin files in that directory as edit targets |
+| `#` / `#pick` | Fuzzy pick a file to edit, then type the instruction |
+| `@@file` | Legacy alias of `#file` |
 | `@clipboard` / `@selection` | Clipboard or terminal selection |
 | `@git:status` + a question | Attach status and ask |
 | `@git:status` alone | Run the **git status** action (no LLM) |
@@ -148,21 +153,24 @@ wezai.apply_to_config(config, {
     include_scrollback = true,
   },
   git = { default_branch = nil, max_attach_bytes = 80000 },
-  chat_max_turns = 6,
+  chat_max_turns = 40,
   require_edit_confirm = true,
   require_risk_confirm = true,
   -- Soft attach budget. Larger @files are sent as head+tail (not rejected).
-  -- @@edit still needs the full file under this limit (or split the file).
+  -- #edit still needs the full file under this limit (or split the file).
   max_file_bytes = 200000,
   files = {
     large_file = "head_tail", -- or "head" / "error"
     -- head_bytes = 120000,
     -- tail_bytes = 80000,
   },
-  -- @@ edit backups (timestamped). Set enabled = false to disable.
-  -- dir = nil writes next to the file; or e.g. "~/.local/share/wezai/bak"
-  backup = { enabled = true, suffix = ".wezai.bak", dir = nil },
-  -- backup_suffix = ".wezai.bak", -- legacy alias for backup.suffix
+  context = {
+    max_prompt_tokens = 24000,
+    confirm_tokens = 12000,
+    max_dir_files = 80,
+  },
+  -- # edit backups: sibling dotfile `.name.<timestamp>.wezai.bak`
+  backup = { enabled = true, suffix = ".wezai.bak", dotfile = true, dir = nil },
 
   -- Token/model usage (shown when the AI pane opens; persisted under ~/.local/share/wezai/stats.json)
   stats = { enabled = true },
@@ -178,18 +186,19 @@ plugin/
   init.lua       -- entry, keybindings, ask/edit orchestration
   palette.lua    -- CTRL+SHIFT+P unified palette
   ui.lua         -- output pane, styling, InputSelector
-  session.lua    -- chat memory + history events
+  session.lua    -- chat memory + pinned @/# files + drafts
   history.lua    -- shell/scrollback history
   git.lua        -- @git action catalog
   kube.lua       -- @kube kubectl catalog
   tf.lua         -- @tf terraform catalog
-  context.lua    -- @ / @@ parsing + redaction
-  edit.lua       -- backups, diffs, apply confirm
+  context.lua    -- @ / # parsing + dir walk + token budget
+  edit.lua       -- wezai dotfile backups, diffs, apply confirm
+  composer.lua / composer.py  -- CTRL+I ask pane (AI log stays visible)
+  files.lua      -- fuzzy @pick / #pick
   shell.lua      -- dialect, risk gate, clipboard
   util.lua
   settings.lua   -- defaults + user merge
   stats.lua      -- token/model usage DB
-  files.lua      -- fuzzy @pick / @@pick via InputSelector
   providers/     -- chat_http, gemini_api, ollama_bin, lms_bin
 ```
 

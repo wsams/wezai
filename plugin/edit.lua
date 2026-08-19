@@ -7,6 +7,7 @@ local M = {}
 
 local DEFAULT_SUFFIX = ".wezai.bak"
 local DIFF_PREVIEW_MAX = 80
+-- Default backup name: `.notes.txt.20260819-040305.wezai.bak` (dotfile, searchable `*wezai*`).
 
 --- Normalize backup settings from nested `backup.*` and legacy `backup_suffix`.
 function M.backup_opts(config)
@@ -29,10 +30,15 @@ function M.backup_opts(config)
     else
         dir = nil
     end
+    local dotfile = b.dotfile
+    if dotfile == nil then
+        dotfile = true
+    end
     return {
         enabled = enabled and true or false,
         suffix = suffix,
         dir = dir,
+        dotfile = dotfile and true or false,
     }
 end
 
@@ -40,7 +46,19 @@ local function timestamp_slug()
     return os.date("%Y%m%d-%H%M%S")
 end
 
---- Build a unique backup path: `<target>.<timestamp><suffix>` or under `backup.dir`.
+local function backup_filename(base, ts, suffix, n, dotfile)
+    local extra = ""
+    if n and n > 1 then
+        extra = "-" .. tostring(n)
+    end
+    local name = base .. "." .. ts .. extra .. suffix
+    if dotfile and name:sub(1, 1) ~= "." then
+        name = "." .. name
+    end
+    return name
+end
+
+--- Build a unique backup path. Default: sibling dotfile `.name.<timestamp>.wezai.bak`.
 function M.backup_path_for(path, config, ts)
     local opts = M.backup_opts(config)
     if not opts.enabled then
@@ -48,13 +66,18 @@ function M.backup_path_for(path, config, ts)
     end
     ts = ts or timestamp_slug()
     local base = util.basename(path)
-    local name = base .. "." .. ts .. opts.suffix
+    local name = backup_filename(base, ts, opts.suffix, nil, opts.dotfile)
     local candidate
     if opts.dir and opts.dir ~= "" then
         local dir = opts.dir:gsub("[/\\]+$", "")
         candidate = dir .. util.separator .. name
     else
-        candidate = path .. "." .. ts .. opts.suffix
+        local parent = util.dirname(path)
+        if parent and parent ~= "" then
+            candidate = parent .. util.separator .. name
+        else
+            candidate = name
+        end
     end
     -- Rare same-second collision: append -2, -3, …
     if not util.path_exists_as_file(candidate) then
@@ -62,12 +85,18 @@ function M.backup_path_for(path, config, ts)
     end
     local n = 2
     while n < 100 do
+        local alt_name = backup_filename(base, ts, opts.suffix, n, opts.dotfile)
         local alt
         if opts.dir and opts.dir ~= "" then
             local dir = opts.dir:gsub("[/\\]+$", "")
-            alt = dir .. util.separator .. base .. "." .. ts .. "-" .. n .. opts.suffix
+            alt = dir .. util.separator .. alt_name
         else
-            alt = path .. "." .. ts .. "-" .. n .. opts.suffix
+            local parent = util.dirname(path)
+            if parent and parent ~= "" then
+                alt = parent .. util.separator .. alt_name
+            else
+                alt = alt_name
+            end
         end
         if not util.path_exists_as_file(alt) then
             return alt
@@ -84,6 +113,9 @@ local function backup_label(config)
     end
     if opts.dir and opts.dir ~= "" then
         return "backup → " .. opts.dir
+    end
+    if opts.dotfile then
+        return "keeps dotfile *wezai.bak"
     end
     return "keeps timestamped " .. opts.suffix
 end
@@ -121,6 +153,29 @@ function M.apply_file_edit(path, new_content, config)
     return true, nil, backup_path, original
 end
 
+local function restore_one(item)
+    local content = nil
+    local source = nil
+    if item.backup and item.backup ~= "" then
+        local ok, body = util.read_text_file(item.backup, nil)
+        if not ok then
+            return false, "Cannot read backup: " .. tostring(body), nil
+        end
+        content = body
+        source = item.backup
+    elseif item.content ~= nil then
+        content = item.content
+        source = "(in-memory; backups disabled)"
+    else
+        return false, "No backup available to undo.", nil
+    end
+    local wok, werr = util.write_text_file(item.path, content)
+    if not wok then
+        return false, "Undo failed: " .. tostring(werr), source
+    end
+    return true, nil, source
+end
+
 function M.undo_last_edit(window, ai_pane)
     local last = session.get_last_edit(window)
     if not last or not last.path then
@@ -128,30 +183,22 @@ function M.undo_last_edit(window, ai_pane)
         return false
     end
 
-    local content = nil
-    local source = nil
-    if last.backup and last.backup ~= "" then
-        local ok, body = util.read_text_file(last.backup, nil)
-        if not ok then
-            ui.ai_print(ai_pane, "Cannot read backup: " .. tostring(body), "error")
-            return false
-        end
-        content = body
-        source = last.backup
-    elseif last.content ~= nil then
-        content = last.content
-        source = "(in-memory; backups disabled)"
-    else
-        ui.ai_print(ai_pane, "No backup available to undo.", "error")
-        return false
+    local items = last.items
+    if type(items) ~= "table" or #items == 0 then
+        items = { last }
     end
 
-    local wok, werr = util.write_text_file(last.path, content)
-    if not wok then
-        ui.ai_print(ai_pane, "Undo failed: " .. tostring(werr), "error")
-        return false
+    local restored = {}
+    for i = #items, 1, -1 do
+        local item = items[i]
+        local ok, err, source = restore_one(item)
+        if not ok then
+            ui.ai_print(ai_pane, err or "Undo failed", "error")
+            return false
+        end
+        restored[#restored + 1] = item.path .. " ← " .. tostring(source)
     end
-    ui.ai_print(ai_pane, "Restored " .. last.path .. " from " .. source, "success")
+    ui.ai_print(ai_pane, "Restored:\n" .. table.concat(restored, "\n"), "success")
     return true
 end
 
@@ -386,6 +433,100 @@ end
 function M.confirm_and_apply(window, shell_pane, ai_pane, config, path, original, new_content, message, callback)
     callback = callback or function() end
     show_diff_then_confirm(window, shell_pane, ai_pane, config, path, original, new_content, message, callback)
+end
+
+--- Apply several file edits. Diffs print in the AI pane; one confirm covers the batch.
+--- changes: { {path, original, new_content}, ... }
+function M.confirm_and_apply_many(window, shell_pane, ai_pane, config, changes, message, callback)
+    callback = callback or function() end
+    if type(changes) ~= "table" or #changes == 0 then
+        callback(false)
+        return
+    end
+    if #changes == 1 then
+        local c = changes[1]
+        M.confirm_and_apply(
+            window,
+            shell_pane,
+            ai_pane,
+            config,
+            c.path,
+            c.original,
+            c.new_content,
+            message,
+            callback
+        )
+        return
+    end
+
+    local stats_parts = {}
+    for _, c in ipairs(changes) do
+        local diff, old_n, new_n = M.unified_diff(c.path, c.original, c.new_content)
+        stats_parts[#stats_parts + 1] = string.format(
+            "%s  %d → %d lines\n%s",
+            c.path,
+            old_n or 0,
+            new_n or 0,
+            diff
+        )
+    end
+    ui.ai_print(ai_pane, "Review " .. tostring(#changes) .. " file edits", "warn")
+    if message and message ~= "" then
+        ui.ai_print(ai_pane, message, "message")
+    end
+    ui.ai_print(ai_pane, table.concat(stats_parts, "\n\n"), "diff")
+
+    local function apply_all()
+        local items = {}
+        local saved = {}
+        for _, c in ipairs(changes) do
+            local ok, err, backup, prior = M.apply_file_edit(c.path, c.new_content, config)
+            if not ok then
+                ui.ai_print(ai_pane, err or ("write failed: " .. tostring(c.path)), "error")
+                if #items > 0 then
+                    session.set_last_edit_batch(window, items)
+                end
+                callback(false)
+                return
+            end
+            items[#items + 1] = { path = c.path, backup = backup, content = prior or c.original or "" }
+            local bak = backup or "disabled"
+            saved[#saved + 1] = c.path .. "\nbackup: " .. bak
+        end
+        session.set_last_edit_batch(window, items)
+        ui.ai_print(ai_pane, "Saved " .. tostring(#items) .. " files:\n" .. table.concat(saved, "\n"), "success")
+        callback(true)
+    end
+
+    if config.require_edit_confirm == false then
+        apply_all()
+        return
+    end
+
+    local bak = backup_label(config)
+    local title = string.format("Apply %d file edits? (%s)", #changes, bak)
+    local function open_confirm()
+        ui.input_select(window, shell_pane, title, {
+            { id = "apply", label = "Apply all — write " .. tostring(#changes) .. " files (" .. bak .. ")" },
+            { id = "cancel", label = "Cancel — discard all changes" },
+        }, function(_, _, id)
+            if id == "apply" then
+                apply_all()
+            else
+                ui.ai_print(ai_pane, "Cancelled — files not modified.", "warn")
+                callback(false)
+            end
+        end, {
+            fuzzy = false,
+            alphabet = "ac",
+            description = "Full diffs are in the AI pane. a=Apply all, c=Cancel.",
+        })
+    end
+    if wezterm.time and wezterm.time.call_after then
+        wezterm.time.call_after(0.15, open_confirm)
+    else
+        open_confirm()
+    end
 end
 
 return M

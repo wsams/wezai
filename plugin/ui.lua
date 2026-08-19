@@ -5,7 +5,7 @@ local stats = require("stats")
 
 local M = {}
 
--- tab_id -> { ai = pane, shell = pane, pad = n }
+-- tab_id -> { ai = pane, shell = pane, composer = pane, pad = n }
 local panes = {}
 local default_pad = 2
 
@@ -58,7 +58,7 @@ local function keep_alive_args(pad)
         "sh",
         "-c",
         string.format(
-            "printf '\\r\\n%s%s%s%s — output pane\\r\\n%s%sFollow up: CTRL+i%s · %sCTRL+SHIFT+P%s command palette\\r\\n%sType @git / @kube / @tf / @history in the palette to filter\\r\\n\\r\\n'; "
+            "printf '\\r\\n%s%s%s%s — output pane\\r\\n%s%sFollow up: CTRL+i%s (composer keeps this pane visible) · %sCTRL+SHIFT+P%s command palette\\r\\n%sType @ to attach, # to edit · Compact/Clear in the palette\\r\\n\\r\\n'; "
                 .. "WEZAI_OUTPUT_PANE=1; while true; do sleep 86400; done",
             indent,
             BOLD .. CYAN,
@@ -135,6 +135,28 @@ local function find_pane_by_id(window, want_id)
     return nil
 end
 
+local function process_looks_like_composer(pane)
+    local ok_info, info = pcall(function()
+        return pane:get_foreground_process_info()
+    end)
+    if ok_info and type(info) == "table" then
+        local chunks = {}
+        if type(info.argv) == "table" then
+            for _, a in ipairs(info.argv) do
+                chunks[#chunks + 1] = tostring(a)
+            end
+        end
+        if info.executable then
+            chunks[#chunks + 1] = tostring(info.executable)
+        end
+        local blob = table.concat(chunks, " ")
+        if blob:find("WEZAI_COMPOSER_PANE", 1, true) or blob:find("composer.py", 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
 local function process_looks_like_ai(pane)
     local ok_info, info = pcall(function()
         return pane:get_foreground_process_info()
@@ -168,6 +190,10 @@ end
 
 local function looks_like_ai_pane(pane)
     if not pane_usable(pane) then
+        return false
+    end
+    -- Composer is a prompt pane, not the AI output pane.
+    if process_looks_like_composer(pane) then
         return false
     end
     -- Process fingerprint survives long scrollback (banner may be gone).
@@ -211,14 +237,37 @@ local function find_ai_pane_in_tab(window, prefer_id)
     return nil
 end
 
-local function remember_panes(tid, ai, shell, pad)
+local function remember_panes(tid, ai, shell, pad, composer)
+    local prev = panes[tid] or {}
     panes[tid] = {
         ai = ai,
         shell = shell,
         pad = pad or default_pad,
         ai_id = pane_id(ai),
         shell_id = pane_id(shell),
+        composer = composer or prev.composer,
+        composer_id = composer and pane_id(composer) or prev.composer_id,
     }
+end
+
+function M.remember_composer(tid, composer, shell)
+    local entry = panes[tid]
+    if entry then
+        entry.composer = composer
+        entry.composer_id = pane_id(composer)
+        if shell then
+            entry.shell = shell
+            entry.shell_id = pane_id(shell)
+        end
+    else
+        panes[tid] = {
+            composer = composer,
+            composer_id = pane_id(composer),
+            shell = shell,
+            shell_id = pane_id(shell),
+            pad = default_pad,
+        }
+    end
 end
 
 -- Strip/replace invalid UTF-8 so InputSelector doesn't crash on history labels.
@@ -271,6 +320,12 @@ function M.shell_pane_for(window, pane)
     local entry = panes[tid]
     local pid = pane_id(pane)
 
+    if process_looks_like_composer(pane) then
+        if entry and pane_usable(entry.shell) then
+            return entry.shell
+        end
+    end
+
     if entry and pane_usable(entry.ai) and pid and pane_id(entry.ai) == pid then
         if pane_usable(entry.shell) and pane_id(entry.shell) ~= pid then
             return entry.shell
@@ -284,7 +339,7 @@ function M.shell_pane_for(window, pane)
         end
     end
 
-    if pane_usable(pane) and not looks_like_ai_pane(pane) then
+    if pane_usable(pane) and not looks_like_ai_pane(pane) and not process_looks_like_composer(pane) then
         return pane
     end
 
