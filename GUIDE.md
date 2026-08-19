@@ -147,7 +147,8 @@ Type to fuzzy-filter. Labels start with namespaces so filtering is easy:
 | **Pick model…** | Switch model for next requests (`models` list / `WEZAI_MODELS`) |
 | **Compact chat (keep @/# files)** | Shrink conversation + sticky selection; keep pinned files |
 | **Clear chat + file context** | Wipe turns, selections, drafts, and `@`/`#` pins |
-| **Update wezai plugin** | `wezterm.plugin.update_all()` then reload config (GitHub installs). Prefer this over uncommenting `update_all()` in `wezterm.lua`. |
+| **Show wezai install** | Version + `plugin_dir` / git cache path |
+| **Update wezai plugin** | `git fetch` + `pull --ff-only` in the wezai checkout, then `wezterm.plugin.update_all()` + reload |
 
 ---
 
@@ -532,7 +533,9 @@ CTRL+I → @weather should I bring a jacket tonight?
 | Empty `@history` | Run commands in fish/zsh/bash first; check `history.tail_bytes` / `palette_n` |
 | No `@tf` in palette | Need wezai ≥ 1.5.0 with `plugin/tf.lua`. Palette → **Update wezai plugin**, then reload. Log should say `tf.lua ok`. Shortcut is `CTRL+ALT+T` (not `CTRL+SHIFT+T`) |
 | No `@weather` / “No zip set” | Need `plugin/weather.lua`. Set `@weather:zip 90210` or `WEZAI_WEATHER_ZIP=90210` in `wezai.env`. Shortcut is `CTRL+ALT+W` (not `CTRL+SHIFT+W`) |
-| Palette title is `wezai ?` | Stale plugin without `plugin/version.lua`. Update via the palette action; log should show `wezai v1.10.0…` not `?` |
+| Palette title is `wezai ?` | Stale plugin without `plugin/version.lua`. Palette → **Update wezai plugin**; log should show `wezai v1.12.0…` not `?` |
+| Config error `yield across a C-call boundary` | Load-time process spawn (fixed after 1.12.0). Palette is unavailable — `git fetch` in the WezTerm plugin cache (see README Troubleshooting), then reload |
+| Plugin not updating / still looks old | Palette → **Show wezai install** (path + version) then **Update wezai plugin**. If `require` fails, fetch in the cache dir (README) |
 | Plugin not loading | `require` local path or publish URL; ensure cache has `plugin/palette.lua` |
 | Env vars from `.bashrc` ignored | GUI / Flatpak WezTerm (Bazzite) often has a tiny environment. Put keys in `~/.config/wezterm/wezai.env` instead |
 

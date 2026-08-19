@@ -44,7 +44,9 @@ WEZAI_WEATHER_ZIP=90210
 
 Optional Lua table still wins over env if you pass one: `wezai.apply_to_config(config, { model = "qwen2.5:14b" })`.
 
-WezTerm clones plugins into its cache on first `require`. To pull a new GitHub release **without** uncommenting `update_all()` in this file: palette (`CTRL+SHIFT+P`) → **Update wezai plugin**. That runs `wezterm.plugin.update_all()` and reloads config. Palette titles and the AI pane banner show the installed version (e.g. `wezai v1.10.0+fc6d5b5`) so you can confirm the update landed. Debug Overlay still works if you prefer it; do **not** leave `update_all()` / `reload_configuration()` at config file scope (reload loops / overwrites a local checkout).
+WezTerm clones plugins into its cache on first `require`. To pull a new release: palette (`CTRL+SHIFT+P`) → **Update wezai plugin**. That `git fetch` + `pull --ff-only` in the wezai checkout, runs `wezterm.plugin.update_all()`, and reloads. **Show wezai install** prints the version and cache path. Palette titles show `wezai v1.12.0+…` so you can confirm the pull.
+
+Do **not** leave `update_all()` / `reload_configuration()` at config file scope (reload loops). If the plugin cannot load at all, use the [Troubleshooting](#troubleshooting) git-in-cache steps — the palette is unavailable until `require` succeeds.
 
 ### Providers
 
@@ -218,6 +220,38 @@ plugin/
   stats.lua      -- token/model usage DB
   providers/     -- chat_http, gemini_api, ollama_bin, lms_bin
 ```
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| Stale wezai / still on an old release | Palette → **Update wezai plugin**. Confirm the palette title / AI banner version changed. **Show wezai install** prints the cache path. |
+| Config error `yield across a C-call boundary` | A load-time `run_child_process` bug (fixed after 1.12.0). Palette cannot run until `require` works — use the cache `git fetch` below, then reload. |
+| Palette is WezTerm’s, not wezai | Reload; wezai binds `CTRL+SHIFT+P`. |
+| Env vars from `.bashrc` ignored | GUI WezTerm often has a tiny environment. Use `~/.config/wezterm/wezai.env`. |
+
+**If wezai fails to load**, the palette is gone. Sync the GitHub clone by hand, then reload (Debug Overlay → `wezterm.reload_configuration()`, or quit/reopen).
+
+```bash
+# Encoded clone of https://github.com/wsams/wezai
+NAME='*githubsDscomsZswsamssZswezai*'
+
+# macOS
+CACHE="$HOME/Library/Application Support/wezterm/plugins"
+# Linux
+# CACHE="${XDG_DATA_HOME:-$HOME/.local/share}/wezterm/plugins"
+# Flatpak WezTerm
+# CACHE="$HOME/.var/app/org.wezfurlong.wezterm/data/wezterm/plugins"
+
+REPO=$(find "$CACHE" -type d -name "$NAME" 2>/dev/null | head -1)
+# If that path is already …/plugin, cd to its parent (the git root).
+cd "$REPO"
+git fetch origin && git pull --ff-only
+```
+
+Optional Debug Overlay (when config still loads): `wezterm.plugin.update_all()` then `wezterm.reload_configuration()`. Never leave those at file scope in `wezterm.lua`.
 
 ---
 

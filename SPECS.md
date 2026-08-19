@@ -44,7 +44,7 @@ wezai.apply_to_config(config)
 
 User customizations (provider, weather zip, kube ns, …) belong in **`~/.config/wezterm/wezai.env`** (see [wezai.env.example](wezai.env.example)). GUI/Flatpak WezTerm often does not inherit `.bashrc` environment.
 
-To refresh a **GitHub** install: command palette → **Update wezai plugin** (`wezterm.plugin.update_all()` + `wezterm.reload_configuration()`). Do **not** call those at config file scope — `reload_configuration()` loops, and `update_all()` overwrites a local checkout. Debug Overlay remains an optional alternative.
+To refresh a **GitHub** install: command palette → **Update wezai plugin** (`git fetch` + `pull --ff-only` in the discovered checkout, then `wezterm.plugin.update_all()` + reload). **Show wezai install** prints version + cache path. Do **not** call `update_all` / `reload_configuration` at config file scope — reload loops. If `require` itself fails, the palette is unavailable: `git fetch` in the WezTerm plugin cache (README Troubleshooting), then reload. Debug Overlay remains an optional alternative when config still loads.
 
 WezTerm stores plugins under its plugin cache (encoded URLs / paths). After editing a **GitHub-required** install: use the palette update action, or sync the working tree into that cache dir, then reload. For day-to-day Lua work, `plugin.require("/absolute/path/…")` and skip `update_all()`.
 
@@ -224,7 +224,7 @@ Unified fuzzy `InputSelector` with scopes:
 - `weather` (`CTRL+ALT+W` — not `CTRL+SHIFT+W`, which is WezTerm CloseCurrentTab)
 - `history` (`CTRL+SHIFT+H`) and filtered history scopes
 
-Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, Attach/Edit file (fuzzy), Undo edit, Copy last command, Shorter re-ask, Pick model, **Compact chat (keep @/# files)**, **Clear chat + file context**, **Update wezai plugin**.
+Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, Attach/Edit file (fuzzy), Undo edit, Copy last command, Shorter re-ask, Pick model, **Compact chat (keep @/# files)**, **Clear chat + file context**, **Show wezai install**, **Update wezai plugin**.
 
 ### 5.3 History
 
@@ -489,7 +489,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] Pick model / palette actions reuse **one** AI pane (no second split).
 - [ ] Palette title and AI pane banner show install version (`wezai v…` / sha), never `wezai ?` when `plugin/version.lua` is present. Config load must not error with `yield across a C-call boundary`.
 - [ ] `wezai.apply_to_config(config)` with no table binds keys using Ollama HTTP defaults; `wezai.env` / `WEZAI_*` overlay model, zip, and keys.
-- [ ] Palette **Update wezai plugin** pulls the GitHub cache and reloads (do not put `update_all()` at config file scope).
+- [ ] Palette **Show wezai install** prints version + cache path; **Update wezai plugin** fetches the checkout, runs `update_all`, and reloads (do not put `update_all()` at config file scope).
 - [ ] Fish dialect: no bogus `; end` on one-liners; macOS: no `du --exclude`.
 - [ ] `@git:status` prints in AI pane; mutating git confirms.
 - [ ] `@kube:pods` shows current ns (or “(no resources…)”); kubectl found even when WezTerm was Dock-launched.
@@ -530,7 +530,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 | CTRL+I composer (AI pane stays visible) | `plugin/composer.lua`, `plugin/composer.py` |
 | `run_cmd` / `resolve_executable` | `plugin/util.lua` |
 | Pane / UI | `plugin/ui.lua` |
-| Install version label | `plugin/version.lua`, `plugin/util.lua` (`version_label` / `brand_with_version`) |
+| Install version label | `plugin/version.lua`, `plugin/util.lua` (`version_label` / `brand_with_version` / `sync_plugin_git`) |
 | Settings / env overlay | `plugin/settings.lua` (`wezai.env`, `WEZAI_*`) |
 | Providers | `plugin/providers/` |
 | Git / Kube / Terraform catalogs | `plugin/git.lua`, `plugin/kube.lua`, `plugin/tf.lua` |

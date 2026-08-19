@@ -1102,18 +1102,25 @@ palette.handlers = {
         session.clear(win)
         ui.ai_print(ui.ensure_ai_pane(win, p, cfg), "Cleared chat, selections, and @/# file list.", "system")
     end,
+    show_install = function(win, p, cfg)
+        local ai_pane = ui.ensure_ai_pane(win, p, cfg)
+        ui.ai_print(ai_pane, util.install_report(), "system")
+    end,
     update_plugin = function(win, p, cfg)
         local ai_pane = ui.ensure_ai_pane(win, p, cfg)
-        ui.ai_print(
-            ai_pane,
-            "Updating WezTerm plugins (wezterm.plugin.update_all)… then reloading config.",
-            "status"
-        )
+        ui.ai_print(ai_pane, util.install_report(), "system")
+        ui.ai_print(ai_pane, "Syncing wezai git checkout (fetch + ff-only pull)…", "status")
+        local git_ok, git_log = util.sync_plugin_git()
+        if git_log and git_log ~= "" then
+            ui.ai_print(ai_pane, git_log, git_ok and "plain" or "warn")
+        end
+        wezterm.log_info("wezai: sync_plugin_git ok=" .. tostring(git_ok) .. " " .. tostring(git_log))
+        ui.ai_print(ai_pane, "wezterm.plugin.update_all()… then reload.", "status")
         local ok, err = pcall(function()
             wezterm.plugin.update_all()
         end)
         if not ok then
-            ui.ai_print(ai_pane, "Plugin update failed: " .. tostring(err), "error")
+            ui.ai_print(ai_pane, "update_all failed: " .. tostring(err), "error")
             return
         end
         -- Do not call update_all/reload at config file scope — that loops.
