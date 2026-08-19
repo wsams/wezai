@@ -477,19 +477,21 @@ function M.resolve_executable(name, opts)
 end
 
 -- ---------------------------------------------------------------------------
--- Install identity (semantic version from package.json, else short git sha)
+-- Install identity (bundled version.lua, package.json, short git sha)
 -- ---------------------------------------------------------------------------
 
 local install = {
     plugin_dir = nil,
     repo_dir = nil,
     label = nil,
+    source = nil,
 }
 
 function M.set_install_dirs(plugin_dir, repo_dir)
     install.plugin_dir = plugin_dir
     install.repo_dir = repo_dir
     install.label = nil
+    install.source = nil
 end
 
 function M.plugin_dir()
@@ -500,17 +502,67 @@ function M.repo_dir()
     return install.repo_dir
 end
 
-local function read_package_semver(repo_dir)
-    if not repo_dir or repo_dir == "" then
+local function strip_trailing_sep(path)
+    if not path or path == "" then
+        return path
+    end
+    return (path:gsub("[/\\]+$", ""))
+end
+
+local function walk_up_dirs(start, max_levels)
+    local dirs = {}
+    local dir = strip_trailing_sep(start)
+    for _ = 1, max_levels or 4 do
+        if not dir or dir == "" then
+            break
+        end
+        dirs[#dirs + 1] = dir
+        local parent = M.dirname(dir)
+        if not parent or parent == dir then
+            break
+        end
+        dir = parent
+    end
+    return dirs
+end
+
+local function candidate_roots()
+    local seen = {}
+    local roots = {}
+    local function add(path)
+        path = strip_trailing_sep(path)
+        if not path or path == "" or seen[path] then
+            return
+        end
+        seen[path] = true
+        roots[#roots + 1] = path
+        for _, up in ipairs(walk_up_dirs(path, 4)) do
+            if not seen[up] then
+                seen[up] = true
+                roots[#roots + 1] = up
+            end
+        end
+    end
+    add(install.repo_dir)
+    add(install.plugin_dir)
+    return roots
+end
+
+local function read_package_semver(root)
+    if not root or root == "" then
         return nil
     end
-    local path = repo_dir .. SEP .. "package.json"
+    local path = root .. SEP .. "package.json"
     local ok, content = M.read_text_file(path, 65536)
     if not ok or type(content) ~= "string" then
         return nil
     end
     local pok, data = pcall(wezterm.json_parse, content)
     if not pok or type(data) ~= "table" then
+        local v = content:match('"version"%s*:%s*"(%d+%.%d+[^"]*)"')
+        if v then
+            return v
+        end
         return nil
     end
     local v = data.version
@@ -520,8 +572,35 @@ local function read_package_semver(repo_dir)
     return nil
 end
 
+local function resolve_git_dir(repo_dir)
+    if not repo_dir or repo_dir == "" then
+        return nil
+    end
+    local git_path = repo_dir .. SEP .. ".git"
+    if M.path_exists_as_dir(git_path) then
+        return git_path
+    end
+    local ok, content = M.read_text_file(git_path, 4096)
+    if not ok or type(content) ~= "string" then
+        return nil
+    end
+    local gitdir = trim(content):match("^gitdir:%s*(.+)$")
+    if not gitdir then
+        return nil
+    end
+    gitdir = trim(gitdir)
+    if not M.is_absolute_path(gitdir) then
+        gitdir = repo_dir .. SEP .. gitdir
+    end
+    return gitdir
+end
+
 local function read_git_sha_from_head_file(repo_dir)
-    local head_path = repo_dir .. SEP .. ".git" .. SEP .. "HEAD"
+    local git_dir = resolve_git_dir(repo_dir)
+    if not git_dir then
+        return nil
+    end
+    local head_path = git_dir .. SEP .. "HEAD"
     local ok, head = M.read_text_file(head_path, 4096)
     if not ok or type(head) ~= "string" then
         return nil
@@ -536,7 +615,7 @@ local function read_git_sha_from_head_file(repo_dir)
         return nil
     end
     ref = trim(ref)
-    local ref_path = repo_dir .. SEP .. ".git" .. SEP .. ref:gsub("/", SEP)
+    local ref_path = git_dir .. SEP .. ref:gsub("/", SEP)
     local rok, ref_body = M.read_text_file(ref_path, 4096)
     if rok and type(ref_body) == "string" then
         local ref_sha = trim(ref_body):match("^(%x+)")
@@ -544,8 +623,7 @@ local function read_git_sha_from_head_file(repo_dir)
             return ref_sha:sub(1, 7)
         end
     end
-    -- Packed refs fallback
-    local pok, packed = M.read_text_file(repo_dir .. SEP .. ".git" .. SEP .. "packed-refs", 1024 * 1024)
+    local pok, packed = M.read_text_file(git_dir .. SEP .. "packed-refs", 1024 * 1024)
     if not pok or type(packed) ~= "string" then
         return nil
     end
@@ -560,44 +638,105 @@ local function read_git_sha_from_head_file(repo_dir)
     return nil
 end
 
-local function read_git_sha(repo_dir)
-    if not repo_dir or repo_dir == "" then
-        return nil
+local function git_rev_parse(repo_dir)
+    local git = M.resolve_executable("git", {
+        candidates = {
+            "/usr/bin/git",
+            "/usr/local/bin/git",
+            "/opt/homebrew/bin/git",
+        },
+    })
+    if not git then
+        git = "git"
     end
-    local ok, stdout = M.run_cmd({ "git", "-C", repo_dir, "rev-parse", "--short=7", "HEAD" })
+    local ok, stdout = M.run_cmd({ git, "-C", repo_dir, "rev-parse", "--short=7", "HEAD" })
     if ok then
         local sha = trim(stdout or "")
         if sha:match("^%x+$") and #sha >= 7 then
             return sha:sub(1, 7)
         end
     end
-    return read_git_sha_from_head_file(repo_dir)
+    return nil
 end
 
---- Resolve install label: prefer package.json semver; include short sha when available
---- so `update_all` pulls on main are visible between releases.
---- Examples: `v1.7.0+fc6d5b5`, `v1.7.0`, `fc6d5b5`, or `?`.
+local function read_git_sha(repo_dir)
+    if not repo_dir or repo_dir == "" then
+        return nil
+    end
+    return read_git_sha_from_head_file(repo_dir) or git_rev_parse(repo_dir)
+end
+
+local function bundled_semver()
+    local ok, mod = pcall(require, "version")
+    if not ok or type(mod) ~= "table" then
+        return nil
+    end
+    local v = mod.version
+    if type(v) == "string" and v:match("^%d+%.%d+") then
+        return v
+    end
+    return nil
+end
+
+--- How the last version_label() was resolved (e.g. `version.lua+git`).
+function M.version_source()
+    if not install.label then
+        M.version_label()
+    end
+    return install.source or "unknown"
+end
+
+--- Resolve install label: bundled plugin/version.lua, then package.json;
+--- append a short git sha when the checkout is visible so `update_all` pulls
+--- on main are visible between releases.
+--- Examples: `v1.10.0+fc6d5b5`, `v1.10.0`, `fc6d5b5`, or `dev`.
 function M.version_label()
     if install.label then
         return install.label
     end
-    local semver = read_package_semver(install.repo_dir)
-    local sha = read_git_sha(install.repo_dir)
+
+    local semver = bundled_semver()
+    local semver_src = semver and "version.lua" or nil
+    if not semver then
+        for _, root in ipairs(candidate_roots()) do
+            semver = read_package_semver(root)
+            if semver then
+                semver_src = "package.json"
+                break
+            end
+        end
+    end
+
+    local sha
+    for _, root in ipairs(candidate_roots()) do
+        sha = read_git_sha(root)
+        if sha then
+            break
+        end
+    end
+
     local label
+    local source
     if semver and sha then
         label = "v" .. semver .. "+" .. sha
+        source = (semver_src or "semver") .. "+git"
     elseif semver then
         label = "v" .. semver
+        source = semver_src or "semver"
     elseif sha then
         label = sha
+        source = "git"
     else
-        label = "?"
+        -- Plugin loaded; never show a bare `?` in the palette / pane banner.
+        label = "dev"
+        source = "fallback"
     end
     install.label = label
+    install.source = source
     return label
 end
 
---- Brand string with version, e.g. `wezai v1.7.0+fc6d5b5`.
+--- Brand string with version, e.g. `wezai v1.10.0+fc6d5b5`.
 function M.brand_with_version()
     return "wezai " .. M.version_label()
 end

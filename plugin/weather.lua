@@ -360,7 +360,7 @@ function M.resolve_coords(config)
     local loc = M.resolved_location(config)
     if not loc.zip then
         return nil,
-            "No zip set. Use @weather:zip (saved by the plugin) or weather = { zip = \"90210\" } in apply_to_config."
+            "No zip set. Use @weather:zip (saved by the plugin), WEZAI_WEATHER_ZIP in wezai.env, or weather = { zip = \"90210\" } in apply_to_config."
     end
     local store = loc.store or empty_store()
     if cache_matches(store.cache, loc.zip, loc.country) then

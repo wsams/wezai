@@ -140,6 +140,11 @@ function M.show(window, pane, config, opts)
                     H.clear(win, p, cfg)
                 end
             end)
+            add(choices, handlers, "core:update", "Update wezai plugin (GitHub cache + reload)", function(win, p, cfg)
+                if H.update_plugin then
+                    H.update_plugin(win, p, cfg)
+                end
+            end)
         end
 
         if include_git then

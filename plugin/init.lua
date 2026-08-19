@@ -4,6 +4,7 @@ local action = wezterm.action
 -- WezTerm has no debug.getinfo; discover our plugin/ dir by fingerprint.
 -- Prefer the most complete install (so a stale local checkout without tf.lua /
 -- weather.lua cannot win over an updated GitHub plugin cache).
+-- Layouts: clone-root/plugin/*.lua (usual) OR plugin_dir already pointing at plugin/.
 local discovered_plugin_dir, discovered_repo_dir
 do
     local slash = (package.config:sub(1, 1) == "\\") and "\\" or "/"
@@ -21,6 +22,7 @@ do
         "weather.lua",
         "history.lua",
         "files.lua",
+        "version.lua",
     }
 
     local function file_exists(path)
@@ -32,7 +34,19 @@ do
         return true
     end
 
+    local function with_slash(dir)
+        dir = tostring(dir or "")
+        if dir == "" then
+            return ""
+        end
+        if not dir:find("[/\\]$") then
+            dir = dir .. slash
+        end
+        return dir
+    end
+
     local function looks_like_wezai(dir)
+        dir = with_slash(dir)
         for _, name in ipairs(FINGERPRINT) do
             if not file_exists(dir .. name) then
                 return false
@@ -42,6 +56,7 @@ do
     end
 
     local function completeness(dir)
+        dir = with_slash(dir)
         local n = 0
         for _, name in ipairs(FINGERPRINT) do
             if file_exists(dir .. name) then
@@ -56,24 +71,47 @@ do
         return n
     end
 
+    -- plugin.list()[].plugin_dir may be the git clone root *or* the Lua plugin/ dir.
+    local function lua_layout_candidates(plugin_dir)
+        local raw = tostring(plugin_dir or ""):gsub("[/\\]+$", "")
+        local out = {}
+        if raw == "" then
+            return out
+        end
+        local nested = raw .. slash .. "plugin" .. slash
+        local as_is = raw .. slash
+        out[#out + 1] = { dir = nested, repo = raw }
+        out[#out + 1] = { dir = as_is, repo = raw }
+        local parent, leaf = raw:match("^(.*)[/\\]([^/\\]+)$")
+        if leaf == "plugin" and parent and parent ~= "" then
+            out[#out + 1] = { dir = as_is, repo = parent }
+        end
+        return out
+    end
+
     local ranked = {}
+    local seen = {}
     for _, plug in ipairs(wezterm.plugin.list()) do
-        local repo = tostring(plug.plugin_dir or "")
-        local dir = repo .. slash .. "plugin" .. slash
-        local blob = (tostring(plug.component) .. " " .. tostring(plug.url) .. " " .. dir):lower()
-        if blob:find("wezai", 1, true) or looks_like_wezai(dir) then
-            -- Higher score wins: completeness first, then local / wsams preference.
-            local locality = 1
-            if dir:find("sZsUsers", 1, true) or dir:find("filesCss", 1, true) then
-                locality = 3
-            elseif dir:find("wsams", 1, true) then
-                locality = 2
+        local listed = tostring(plug.plugin_dir or "")
+        local blob = (tostring(plug.component) .. " " .. tostring(plug.url) .. " " .. listed):lower()
+        for _, cand in ipairs(lua_layout_candidates(listed)) do
+            local dir = cand.dir
+            if not seen[dir] then
+                seen[dir] = true
+                if blob:find("wezai", 1, true) or looks_like_wezai(dir) then
+                    local locality = 1
+                    if dir:find("sZsUsers", 1, true) or dir:find("filesCss", 1, true) then
+                        locality = 3
+                    elseif dir:find("wsams", 1, true) then
+                        locality = 2
+                    end
+                    ranked[#ranked + 1] = {
+                        score = completeness(dir) * 10 + locality,
+                        dir = dir,
+                        repo = cand.repo,
+                    }
+                end
             end
-            ranked[#ranked + 1] = {
-                score = completeness(dir) * 10 + locality,
-                dir = dir,
-                repo = repo,
-            }
         end
     end
     table.sort(ranked, function(a, b)
@@ -95,7 +133,7 @@ do
         wezterm.log_info(
             "wezai: load path "
                 .. root
-                .. (has_tf and " (tf.lua ok)" or " (tf.lua MISSING — run wezterm.plugin.update_all() or sync local checkout)")
+                .. (has_tf and " (tf.lua ok)" or " (tf.lua MISSING — palette → Update wezai plugin, then reload)")
                 .. (has_weather and " (weather.lua ok)" or " (weather.lua MISSING)")
         )
         discovered_plugin_dir = root
@@ -109,6 +147,7 @@ local util = require("util")
 if discovered_plugin_dir or discovered_repo_dir then
     util.set_install_dirs(discovered_plugin_dir, discovered_repo_dir)
 end
+wezterm.log_info("wezai: " .. util.brand_with_version() .. " (" .. util.version_source() .. ")")
 local ui = require("ui")
 local session = require("session")
 local shell = require("shell")
@@ -835,11 +874,31 @@ palette.handlers = {
         session.clear(win)
         ui.ai_print(ui.ensure_ai_pane(win, p, cfg), "Chat memory cleared.", "system")
     end,
+    update_plugin = function(win, p, cfg)
+        local ai_pane = ui.ensure_ai_pane(win, p, cfg)
+        ui.ai_print(
+            ai_pane,
+            "Updating WezTerm plugins (wezterm.plugin.update_all)… then reloading config.",
+            "status"
+        )
+        local ok, err = pcall(function()
+            wezterm.plugin.update_all()
+        end)
+        if not ok then
+            ui.ai_print(ai_pane, "Plugin update failed: " .. tostring(err), "error")
+            return
+        end
+        -- Do not call update_all/reload at config file scope — that loops.
+        wezterm.reload_configuration()
+    end,
 }
 
 local function apply_to_config(wezterm_config, user_config)
     local config = settings.finalize(user_config)
     settings.maybe_extend_rocks_path(config)
+    if config._env_file then
+        wezterm.log_info("wezai: env file " .. tostring(config._env_file))
+    end
 
     if not providers.ready(config) then
         wezterm.log_error("wezai: backend config rejected")
