@@ -1,12 +1,12 @@
 # wezai
 
-**wezai** is a WezTerm plugin that puts an AI assistant, a command palette, and git/kube/terraform/history shortcuts next to your shell — without leaving the terminal.
+**wezai** is a WezTerm plugin that puts an AI assistant, a command palette, and git/kube/terraform/weather/history shortcuts next to your shell — without leaving the terminal.
 
 > **Alpha software.** wezai is in active development and under heavy testing. Behavior and APIs may change. If you hit a bug or have an idea, please [open an issue](https://github.com/wsams/wezai/issues) — reports are welcome and help shape the project. See [CONTRIBUTING.md](CONTRIBUTING.md) for what to include.
 
-- Ask questions with file, clipboard, git, kube, terraform, and selection context  
+- Ask questions with file, clipboard, git, kube, terraform, weather, and selection context  
 - Edit files in one pass (`@@path`) with a unified diff confirm  
-- One palette (`CTRL+SHIFT+P`) for Ask helpers, `@git:…`, `@kube:…`, `@tf:…`, and `@history`  
+- One palette (`CTRL+SHIFT+P`) for Ask helpers, `@git:…`, `@kube:…`, `@tf:…`, `@weather:…`, and `@history`  
 - Shell-aware suggestions, secret redaction, risky-command confirms  
 
 Full walkthroughs and every palette action: **[GUIDE.md](GUIDE.md)**
@@ -71,13 +71,14 @@ WezTerm clones plugins into its cache on first `require`. After you pull new com
 |-----|--------|
 | `CTRL+I` | **Ask** — type a question or `@` / `@@` ref |
 | `CTRL+SHIFT+E` | **Ask** with pane scrollback attached as context |
-| `CTRL+SHIFT+P` | **Palette** — type `@git`, `@kube`, `@tf`, `@history`, or `Ask` to filter |
+| `CTRL+SHIFT+P` | **Palette** — type `@git`, `@kube`, `@tf`, `@weather`, `@history`, or `Ask` to filter |
 | `CTRL+SHIFT+G` | Palette scoped to `@git` |
 | `CTRL+SHIFT+K` | Palette scoped to `@kube` |
 | `CTRL+ALT+T` | Palette scoped to `@tf` (not `CTRL+SHIFT+T` — that is WezTerm’s new tab) |
+| `CTRL+ALT+W` | Palette scoped to `@weather` (not `CTRL+SHIFT+W` — that is WezTerm’s close tab) |
 | `CTRL+SHIFT+H` | Palette scoped to `@history` |
 
-Stay on your **shell** pane. The right split is **output only** (answers, diffs, git/kube/tf status). Don’t run git from that pane — wezai always uses your shell’s cwd.
+Stay on your **shell** pane. The right split is **output only** (answers, diffs, git/kube/tf/weather status). Don’t run git from that pane — wezai always uses your shell’s cwd.
 
 ```
 CTRL+SHIFT+P  →  type @git:status  →  Enter
@@ -106,6 +107,8 @@ More examples: [GUIDE.md](GUIDE.md).
 | `@tf` / `@tf:validate` | Terraform helpers in the shell cwd (`terraform` binary auto-resolved) |
 | `@tf:state` in a question | Attach `terraform state list` and ask |
 | `@tf:generate …` / `@tf:debug` | AI helpers to generate or debug HCL |
+| `@weather` / `@weather:now` | Current conditions (Open-Meteo; needs a zip) |
+| `@weather:zip 90210` | Save zip from the plugin (`~/.local/share/wezai/weather.json`) |
 | `@dir:path` | Directory listing |
 | `@history …` | Attach recent history, or open the palette if used alone |
 
@@ -128,12 +131,17 @@ wezai.apply_to_config(config, {
   keybinding_git = { key = "g", mods = "CTRL|SHIFT" },
   keybinding_kube = { key = "k", mods = "CTRL|SHIFT" },
   keybinding_tf = { key = "t", mods = "CTRL|ALT" },
+  keybinding_weather = { key = "w", mods = "CTRL|ALT" },
 
   -- Optional: default ns + absolute kubectl if GUI PATH can't find it
   kube = { namespace = nil, kubectl = nil, confirm_mutate = true },
 
   -- Optional: absolute terraform if GUI PATH can't find it
   tf = { terraform = nil, confirm_mutate = true },
+
+  -- Optional: ZIP for @weather (Open-Meteo). Change anytime with @weather:zip
+  -- (saved under ~/.local/share/wezai/weather.json — does not rewrite this file).
+  weather = { zip = nil, country = "US", units = "auto" },
 
   -- Dialect (fish/zsh/bash/…) is auto-appended from the active shell pane / $SHELL.
   system_prompt = "You are a concise terminal assistant. Provide direct commands or brief explanations. "
@@ -183,6 +191,7 @@ plugin/
   git.lua        -- @git action catalog
   kube.lua       -- @kube kubectl catalog
   tf.lua         -- @tf terraform catalog
+  weather.lua    -- @weather Open-Meteo catalog
   context.lua    -- @ / @@ parsing + redaction
   edit.lua       -- backups, diffs, apply confirm
   shell.lua      -- dialect, risk gate, clipboard

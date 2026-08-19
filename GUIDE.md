@@ -1,6 +1,6 @@
 # wezai guide
 
-Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `@tf`, `@history`, and file edits.
+Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `@tf`, `@weather`, `@history`, and file edits.
 
 ---
 
@@ -18,6 +18,7 @@ Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `
 | `CTRL+SHIFT+G` | Same palette, pre-filtered to `@git` |
 | `CTRL+SHIFT+K` | Same palette, pre-filtered to `@kube` |
 | `CTRL+ALT+T` | Same palette, pre-filtered to `@tf` |
+| `CTRL+ALT+W` | Same palette, pre-filtered to `@weather` |
 | `CTRL+SHIFT+H` | Same palette, pre-filtered to `@history` |
 
 You do **not** need `CTRL+I` before the palette. From the shell: `CTRL+SHIFT+P` → type → Enter.
@@ -85,6 +86,7 @@ Undo: palette → **Undo last edit**.
 | `@git:diff` | `@git:diff write a PR summary` |
 | `@tf:state` | `@tf:state what’s orphaned?` |
 | `@tf:validate` | `@tf:validate why is this failing?` |
+| `@weather:now` | `@weather should I bring a jacket?` |
 | `@dir:.` | `@dir:src what modules exist?` |
 | `@history` | `@history what docker commands did I run?` |
 | `@history:40` | `@history:40 summarize recent work` |
@@ -107,6 +109,7 @@ Type to fuzzy-filter. Labels start with namespaces so filtering is easy:
 | `@git:soft` / `@git:rebase` | Soft reset / interactive rebase (any N) |
 | `@kube` | All kubectl actions |
 | `@tf` | All terraform actions |
+| `@weather` | Open-Meteo current / forecast / set zip |
 | `@history` | Recent shell / AI commands |
 | `Ask` / `Fix` / `model` | Core helpers |
 
@@ -320,6 +323,55 @@ Ask-with-context attach tokens: `@tf:state`, `@tf:validate`, `@tf:output`, `@tf:
 
 ---
 
+## `@weather` actions
+
+Open via `CTRL+SHIFT+P` → type `@weather`, or `CTRL+ALT+W`, or Ask → `@weather` / `@weather:now`.
+
+Forecast comes from **Open-Meteo** (no API key). You only need a ZIP / postal code.
+
+**Set the zip from the plugin** (this is the intended way to change it later):
+
+```
+CTRL+ALT+W → @weather:zip
+```
+
+Enter `90210`, or `90210, US`, or `M5V 2T6, CA`. wezai geocodes it, then saves `~/.local/share/wezai/weather.json`. That overlay **overrides** `weather.zip` in `wezterm.lua` and survives reloads. It does **not** rewrite your WezTerm config.
+
+Optional seed in `apply_to_config` if you want a default before the first `@weather:zip`:
+
+```lua
+weather = { zip = "90210", country = "US", units = "auto" }, -- auto: US → °F
+```
+
+`@weather:zip clear` (or `none`) drops the overlay so the wezterm.lua value applies again. `@weather:where` shows effective zip, overlay vs config, and resolved place.
+
+`CTRL+SHIFT+W` is WezTerm’s **close tab** — the weather shortcut is `CTRL+ALT+W`.
+
+### Show (no model)
+
+| Action | Meaning |
+|--------|---------|
+| `@weather:now` | Current conditions, next hours, today/tomorrow |
+| `@weather:forecast` | Current + 7-day daily |
+| `@weather:where` | Configured zip / resolved coordinates |
+
+### Config from the plugin
+
+| Action | Notes |
+|--------|--------|
+| `@weather:zip` | Prompt for postal code |
+| `@weather:zip 90210` | One-shot set |
+
+```
+CTRL+ALT+W → @weather:now
+CTRL+I → @weather should I bring a jacket?
+CTRL+I → @weather:forecast what’s the weekend look like?
+```
+
+Bare `@weather` opens the weather palette. Add a question after `@weather` / `@weather:now` / `@weather:forecast` to attach conditions and ask the model.
+
+---
+
 ## `@history`
 
 Recent shell history (fish / zsh / bash), scrollback, and wezai session events appear as `@history …` rows in the palette.
@@ -418,6 +470,19 @@ CTRL+I → @tf:generate aws_s3_bucket with versioning enabled
 
 Then write it with `@@main.tf …` after reviewing the suggestion.
 
+### “What’s the weather?”
+
+```
+CTRL+ALT+W → @weather:zip     # once — e.g. 90210
+CTRL+ALT+W → @weather:now
+```
+
+Or attach it to a question:
+
+```
+CTRL+I → @weather should I bring a jacket tonight?
+```
+
 ---
 
 ## Safety
@@ -441,6 +506,7 @@ Then write it with `@@main.tf …` after reviewing the suggestion.
 | Palette is WezTerm’s, not wezai | Reload config; wezai overrides `CTRL+SHIFT+P`. Or set `keybinding_palette` |
 | Empty `@history` | Run commands in fish/zsh/bash first; check `history.tail_bytes` / `palette_n` |
 | No `@tf` in palette | Need wezai ≥ 1.5.0 with `plugin/tf.lua`. `wezterm.plugin.update_all()` then reload. Log should say `tf.lua ok`. Shortcut is `CTRL+ALT+T` (not `CTRL+SHIFT+T`) |
+| No `@weather` / “No zip set” | Need `plugin/weather.lua`. Set `@weather:zip 90210` or `weather = { zip = "90210" }`. Shortcut is `CTRL+ALT+W` (not `CTRL+SHIFT+W`) |
 | Plugin not loading | `require` local path or publish URL; ensure cache has `plugin/palette.lua` |
 
 ---

@@ -2,8 +2,8 @@ local wezterm = require("wezterm")
 local action = wezterm.action
 
 -- WezTerm has no debug.getinfo; discover our plugin/ dir by fingerprint.
--- Prefer the most complete install (so a stale local checkout without tf.lua
--- cannot win over an updated GitHub plugin cache).
+-- Prefer the most complete install (so a stale local checkout without tf.lua /
+-- weather.lua cannot win over an updated GitHub plugin cache).
 local discovered_plugin_dir, discovered_repo_dir
 do
     local slash = (package.config:sub(1, 1) == "\\") and "\\" or "/"
@@ -18,6 +18,7 @@ do
         "git.lua",
         "kube.lua",
         "tf.lua",
+        "weather.lua",
         "history.lua",
         "files.lua",
     }
@@ -90,10 +91,12 @@ do
     if root then
         package.path = table.concat({ package.path, root .. "?.lua", root .. "?/init.lua" }, ";")
         local has_tf = file_exists(root .. "tf.lua")
+        local has_weather = file_exists(root .. "weather.lua")
         wezterm.log_info(
             "wezai: load path "
                 .. root
                 .. (has_tf and " (tf.lua ok)" or " (tf.lua MISSING — run wezterm.plugin.update_all() or sync local checkout)")
+                .. (has_weather and " (weather.lua ok)" or " (weather.lua MISSING)")
         )
         discovered_plugin_dir = root
         discovered_repo_dir = chosen and chosen.repo
@@ -148,6 +151,44 @@ do
             open_picker = function(window, pane, config)
                 local ai = ui.ensure_ai_pane(window, pane, config)
                 ui.ai_print(ai, "@tf unavailable — update the wezai plugin cache.", "error")
+            end,
+        }
+    end
+end
+
+-- Soft-load @weather so a stale install cannot take down the whole plugin.
+local weather
+do
+    local ok, mod = pcall(require, "weather")
+    if ok then
+        weather = mod
+    else
+        wezterm.log_warn(
+            "wezai: @weather catalog disabled — "
+                .. tostring(mod)
+                .. " (sync plugin: wezterm.plugin.update_all() or update your local require path)"
+        )
+        weather = {
+            list_actions = function()
+                return {}
+            end,
+            parse_line = function()
+                return nil
+            end,
+            run_action = function(window, pane, config)
+                local ai = ui.ensure_ai_pane(window, pane, config)
+                ui.ai_print(
+                    ai,
+                    "@weather unavailable — plugin missing weather.lua. Run wezterm.plugin.update_all() then reload config.",
+                    "error"
+                )
+            end,
+            collect_attach = function()
+                return nil, "weather module not loaded"
+            end,
+            open_picker = function(window, pane, config)
+                local ai = ui.ensure_ai_pane(window, pane, config)
+                ui.ai_print(ai, "@weather unavailable — update the wezai plugin cache.", "error")
             end,
         }
     end
@@ -379,15 +420,15 @@ local function prompt_for_ai(window, pane, config, opts)
 
     local description
     if selected_file then
-        description = "wezai — @path / @pick / @@file / @git / @kube / @tf / @history\n---\n"
+        description = "wezai — @path / @pick / @@file / @git / @kube / @tf / @weather / @history\n---\n"
             .. util.truncate(selected_file)
             .. "\n---"
     elseif selection then
-        description = "wezai — selection attached; @pick / @git / @kube / @tf / @history / @@file\n---\n"
+        description = "wezai — selection attached; @pick / @git / @kube / @tf / @weather / @history / @@file\n---\n"
             .. util.truncate(selection)
             .. "\n---"
     else
-        description = "wezai — @path / @pick / @git / @kube / @tf / @history · palette CTRL+SHIFT+P"
+        description = "wezai — @path / @pick / @git / @kube / @tf / @weather / @history · palette CTRL+SHIFT+P"
         if share_pane then
             description = description .. " · sharing pane history"
         end
@@ -437,6 +478,17 @@ local function prompt_for_ai(window, pane, config, opts)
                 return
             elseif tf_ref.mode == "run" then
                 tf.run_action(win, p, config, tf_ref.id, tf_ref.extra)
+                return
+            end
+        end
+
+        local weather_ref = weather.parse_line(line)
+        if weather_ref then
+            if weather_ref.mode == "picker" then
+                palette.show(win, p, config, { scope = "weather" })
+                return
+            elseif weather_ref.mode == "run" then
+                weather.run_action(win, p, config, weather_ref.id, weather_ref.extra)
                 return
             end
         end
@@ -884,6 +936,16 @@ local function apply_to_config(wezterm_config, user_config)
             config.keybinding_tf.mods,
             wezterm.action_callback(function(window, pane)
                 palette.show(window, pane, config, { scope = "tf" })
+            end)
+        )
+    end
+
+    if type(config.keybinding_weather) == "table" and config.keybinding_weather.key then
+        bind_key(
+            config.keybinding_weather.key,
+            config.keybinding_weather.mods,
+            wezterm.action_callback(function(window, pane)
+                palette.show(window, pane, config, { scope = "weather" })
             end)
         )
     end

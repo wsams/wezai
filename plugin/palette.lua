@@ -21,6 +21,22 @@ do
     end
 end
 
+local weather
+do
+    local ok, mod = pcall(require, "weather")
+    if ok then
+        weather = mod
+    else
+        wezterm.log_warn("wezai: palette @weather disabled — " .. tostring(mod))
+        weather = {
+            list_actions = function()
+                return {}
+            end,
+            run_action = function() end,
+        }
+    end
+end
+
 local M = {}
 
 -- Set by init.lua: functions(win, pane, config)
@@ -36,7 +52,7 @@ local function add(choices, handlers, id, label, fn)
     handlers[id] = fn
 end
 
--- scope: nil (all) | "git" | "kube" | "tf" | "history" | "history:…"
+-- scope: nil (all) | "git" | "kube" | "tf" | "weather" | "history" | "history:…"
 function M.show(window, pane, config, opts)
     opts = opts or {}
     local scope = opts.scope
@@ -52,6 +68,7 @@ function M.show(window, pane, config, opts)
         local include_git = (scope == nil or scope == "git")
         local include_kube = (scope == nil or scope == "kube")
         local include_tf = (scope == nil or scope == "tf")
+        local include_weather = (scope == nil or scope == "weather")
         local hist_filter = nil
         if scope == "history" then
             hist_filter = "all"
@@ -158,6 +175,17 @@ function M.show(window, pane, config, opts)
             end
         end
 
+        if include_weather then
+            for _, a in ipairs(weather.list_actions()) do
+                local kind = a.kind == "ai" and "ai" or (a.kind == "show" and "show" or "run")
+                local label = "@weather:" .. a.id .. "  [" .. kind .. "]  " .. a.label
+                local action_id = a.id
+                add(choices, handlers, "weather:" .. action_id, label, function(win, p, cfg)
+                    weather.run_action(win, p, cfg, action_id, nil)
+                end)
+            end
+        end
+
         if hist_filter then
             local cok, entries_or_err = pcall(history.collect_entries, window, pane, config, hist_filter)
             if not cok then
@@ -194,10 +222,12 @@ function M.show(window, pane, config, opts)
             title = brand .. " · @kube  (type to filter)"
         elseif scope == "tf" then
             title = brand .. " · @tf  (type to filter)"
+        elseif scope == "weather" then
+            title = brand .. " · @weather  (type to filter)"
         elseif scope and tostring(scope):find("^history") then
             title = brand .. " · @history  (type to filter)"
         else
-            title = brand .. " · type @git / @kube / @tf / @history / Ask…"
+            title = brand .. " · type @git / @kube / @tf / @weather / @history / Ask…"
         end
 
         -- Open selector on the current pane (do not create AI pane first — that steals focus)

@@ -17,6 +17,8 @@ local BASE = {
     keybinding_kube = { key = "k", mods = "CTRL|SHIFT" },
     -- CTRL|SHIFT+T is WezTerm's SpawnTab — use CTRL|ALT+T for @tf instead.
     keybinding_tf = { key = "t", mods = "CTRL|ALT" },
+    -- CTRL|SHIFT+W is WezTerm's CloseCurrentTab — use CTRL|ALT+W for @weather.
+    keybinding_weather = { key = "w", mods = "CTRL|ALT" },
     -- Shell dialect (fish/zsh/bash/…) is appended automatically per request.
     system_prompt = "You are a concise terminal assistant. Provide direct commands or brief explanations. "
         .. "Warn of dangerous commands. Avoid unnecessary verbosity. Prefer interactive commands that "
@@ -67,6 +69,12 @@ local BASE = {
         confirm_mutate = true,
         max_attach_bytes = 80000,
     },
+    weather = {
+        zip = nil, -- e.g. "90210"; plugin @weather:zip overrides via ~/.local/share/wezai/weather.json
+        country = "US", -- ISO 3166-1 alpha-2 for geocoding
+        units = "auto", -- "auto" (US → imperial) | "imperial" | "metric"
+        path = nil, -- overlay JSON; nil → ~/.local/share/wezai/weather.json
+    },
     chat_max_turns = 6,
     require_edit_confirm = true,
     require_risk_confirm = true,
@@ -87,6 +95,7 @@ local NESTED = {
     git = true,
     kube = true,
     tf = true,
+    weather = true,
     stats = true,
     files = true,
     backup = true,
