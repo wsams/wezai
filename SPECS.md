@@ -61,7 +61,7 @@ plugin/
   version.lua       -- bundled semver for UI (semantic-release writes this)
   util.lua          -- paths, files, JSON parse, run_cmd (pcall), resolve_executable, large-file read, version_label
 
-  ui.lua            -- AI pane lifecycle, styling, InputSelector, usage banner
+  ui.lua            -- AI pane lifecycle, styling, InputSelector, usage banner, start_progress / start_busy
   session.lua       -- per-tab chat memory + pinned @/# files + draft + last edit
   shell.lua         -- shell detect, OS platform hint, risk gate, clipboard, send_command
   context.lua       -- @ / # parsing (@@ alias), dir walk, token budget, redaction
@@ -99,7 +99,7 @@ Node/`package.json` is for semantic-release tooling. At runtime the Lua plugin p
 
 - All git/kube/tf/history/cwd work must use the **shell** pane, never the AI output pane.
 - `ui.shell_pane_for(window, pane)` resolves the real shell when focus is on the AI pane.
-- AI pane is output-only (keep-alive `sh`/`sleep` loop marked `WEZAI_OUTPUT_PANE`).
+- AI pane is output-only (keep-alive `sh`/`sleep` loop marked `WEZAI_OUTPUT_PANE`). Catalog **show** and plugin update print the command immediately, then `ui.start_busy` (braille spinner + elapsed) until output arrives.
 
 ### 4.2 AI pane reuse
 
@@ -140,6 +140,8 @@ Parsing (`util.parse_json_response`): try raw → fenced body → fence-stripped
 `timeout` (seconds) maps to curl `--max-time` (default **300**, sized for local Ollama cold loads). Cloud chat APIs usually finish sooner — set `WEZAI_TIMEOUT` or `timeout` lower if you want a tighter cap. Local OpenAI-compatible servers (notably **Ollama**) may send **no response bytes** until the model runner finishes loading and warmup. If the client disconnects mid-load, Ollama aborts the load (`client connection closed before llama-server finished loading`), so the model never stays warm and every attempt looks cold. For large local models set `timeout` to **300–600**, or pre-warm the model. Transport errors that look like curl timeouts get an explanatory hint from `providers.chat_http`.
 
 While Ask/Edit wait, `ui.start_progress` (when `show_loading` is true) scrolls status lines in the AI pane: model + endpoint, elapsed vs timeout with %, remaining time, and rotating phase hints (cold load / warmup / approaching timeout). Pulses use `wezterm.time.call_after` so they keep printing during long `run_child_process` yields.
+
+Catalog **show** actions (`@weather`, `@git` status/log/diff, `@kube` pods/logs, `@tf` validate/plan, …), weather ZIP geocode, and **Update wezai plugin** use `ui.start_busy` / `ui.with_busy`: print the command immediately, then a braille spinner (`waiting… 2s`). Same `show_loading` flag: `false` still prints the command plus one waiting line, but no pulses.
 ### 4.5 Dialect + platform injection
 
 On every ask (`with_dialect` in `init.lua`):
@@ -235,7 +237,7 @@ Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, 
 
 ### 5.4 `@git` catalog (`git.lua`)
 
-Kinds: `show` (print in AI pane), `shell` (run/insert in shell), `ai` (LLM with git context).
+Kinds: `show` (print in AI pane with command + spinner until git returns), `shell` (run/insert in shell), `ai` (LLM with git context).
 
 Show: `status`, `diff`, `logN` (default 15), `branch`, `stash`, `remote`, `whoami`.  
 Shell: `rebaseN`/`softN` (any positive N, or bare `rebase`/`soft` with prompt), unstage/restore/latest/fetch/pull/push/pushu/sync/stash-*/switch/newbranch/add/commit/amend/identity/ignore.  
@@ -273,7 +275,7 @@ Bare `@kube:id` with trailing text that is **not** only an action run may attach
 
 #### Catalog kinds
 
-- Show: `ctx`, `ns`, `nodes`, `pods`, `pods-all`, `all`, `deploy`, `sts`, `svc`, `ing`, `cm`, `secrets` (names only), `pvc`, `events`, `top-nodes`, `top-pods`, `api-resources`, `can-i`.
+- Show: `ctx`, `ns`, `nodes`, `pods`, `pods-all`, `all`, `deploy`, `sts`, `svc`, `ing`, `cm`, `secrets` (names only), `pvc`, `events`, `top-nodes`, `top-pods`, `api-resources`, `can-i`. These print the command + spinner until kubectl returns.
 - Shell: `describe`, `logsN` / `logs-fN` / `logs-deployN` (`--tail=N`; defaults 200 / 100 / 200), `exec`, `pf`, `pf-svc`, `rollout`, `restart`, `scale`, `wait`, `diff`, `apply`, `delete-f`, `get-yaml`, `use-ns`.
 - AI (careful): `diagnose`, `explain-sel`, `not-ready` — gather read-only kubectl output; steer toward get/describe/logs; honor ns extra when present.
 - Mutate confirms when `kube.confirm_mutate` (default true). Empty successful gets print a clear “(no resources…)” line instead of a blank body.
@@ -289,7 +291,7 @@ Supported synthetics (optional ns via `/` or `:`):
 
 ### 5.6 `@tf` catalog (`tf.lua`)
 
-Kinds: `show` (print in AI pane), `shell` (run/insert in shell), `ai` (LLM for generate/debug).
+Kinds: `show` (print in AI pane with command + spinner until terraform returns), `shell` (run/insert in shell), `ai` (LLM for generate/debug).
 
 Uses the shell pane cwd via `-chdir=`. Binary resolution mirrors kube: `config.tf.terraform` or `util.resolve_executable` (Homebrew/asdf/mise + login shell). Shell-kind actions insert bare `terraform …` into the user’s shell.
 
@@ -339,7 +341,7 @@ Per-tab:
 
 ### 5.9 `@weather` catalog (`weather.lua`)
 
-Kinds: `show` (print in AI pane), `shell` (prompt / persist zip). No model. Forecast from **Open-Meteo** (no API key). ZIP / postal codes geocode via Zippopotam.us, then Open-Meteo geocoding, then Nominatim.
+Kinds: `show` (print in AI pane), `shell` (prompt / persist zip). No model. Forecast from **Open-Meteo** (no API key). ZIP / postal codes geocode via Zippopotam.us, then Open-Meteo geocoding, then Nominatim. Show / zip-geocode print the command in the AI pane and spin until HTTP returns (do not leave a blank pane).
 
 #### Zip resolution
 
@@ -405,7 +407,7 @@ Important fields (see `settings.lua` for full defaults):
 | Key | Role |
 |-----|------|
 | `type`, `model`, `models`, `api_url`, `api_key`, `headers`, `timeout` | Provider (`timeout` default 300s; raise further for huge local loads — §4.4.1). Env: `WEZAI_TYPE`, `WEZAI_MODEL`, `WEZAI_MODELS`, `WEZAI_API_URL`, `WEZAI_API_KEY` (`OPENAI_API_KEY` / `GEMINI_API_KEY` fallback), `WEZAI_TIMEOUT` |
-| `show_loading` | When true (default), Ask/Edit scroll timed status in the AI pane while waiting (model, endpoint, elapsed/timeout %, phase hints). Set `false` to silence. |
+| `show_loading` | When true (default), Ask/Edit use `ui.start_progress`; catalog show / plugin update use `ui.start_busy`. Set `false` to skip pulses (catalog still prints the command). |
 | `ollama_path`, `lms_path` | CLI backends (`WEZAI_OLLAMA_PATH`, `WEZAI_LMS_PATH`) |
 | `system_prompt` | Style; dialect/OS appended per request; JSON contract appended if needed |
 | `max_file_bytes`, `files.*`, `context.*` | Attach budget, large-file policy, dir-walk / token confirm |
@@ -491,14 +493,14 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] `wezai.apply_to_config(config)` with no table binds keys using Ollama HTTP defaults; `wezai.env` / `WEZAI_*` overlay model, zip, and keys.
 - [ ] Palette **Show wezai install** prints version + cache path; **Update wezai plugin** fetches the checkout, runs `update_all`, and reloads (do not put `update_all()` at config file scope).
 - [ ] Fish dialect: no bogus `; end` on one-liners; macOS: no `du --exclude`.
-- [ ] `@git:status` prints in AI pane; mutating git confirms.
+- [ ] `@git:status` prints the command + spinner then status in the AI pane; mutating git confirms.
 - [ ] `@kube:pods` shows current ns (or “(no resources…)”); kubectl found even when WezTerm was Dock-launched.
 - [ ] `@kube:pods kube-system` / `@kube:pods/kube-system` override ns; `@kube:pods -A` lists all ns.
 - [ ] Ask `@kube:pods/kube-system what’s running?` attaches pods (no empty `failed:`).
 - [ ] `@kube:use-ns myns` / `@kube:diagnose`; mutates confirm.
 - [ ] `@tf:validate` prints in AI pane; `@tf:plan` runs in shell; `@tf:apply` confirms.
 - [ ] `@tf:generate …` / `@tf:debug` use the model; attach `@tf:state what’s orphaned?` works.
-- [ ] `@weather:zip 90210` persists overlay; `@weather:now` prints Open-Meteo in the AI pane; `@weather:zip clear` falls back to `weather.zip`.
+- [ ] `@weather:zip 90210` persists overlay; `@weather:now` prints the command + spinner before Open-Meteo output; `@weather:zip clear` falls back to `weather.zip`.
 - [ ] Ask `@weather should I bring a jacket?` attaches current conditions (needs a zip).
 - [ ] Stats banner/line appears; `~/.local/share/wezai/stats.json` updates.
 - [ ] Git/kube/tf/weather/history always use shell cwd (not AI pane).

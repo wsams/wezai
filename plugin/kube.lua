@@ -148,7 +148,6 @@ local function prompt_line(window, pane, description, callback)
 end
 
 local function print_show(ai_pane, title, body)
-    ui.begin_turn(ai_pane, os.date("%H:%M:%S") .. "  kube")
     ui.ai_print(ai_pane, title, "attach")
     ui.ai_print(ai_pane, body ~= "" and body or "(empty)", "plain")
 end
@@ -1013,32 +1012,43 @@ function M.run_action(window, pane, config, id, extra, opts)
         ui.ai_print(ai_pane, "Unknown @kube:" .. tostring(id) .. " — try @kube for the picker", "error")
         return
     end
-    -- Quick connectivity check for show/ai
-    if action.kind == "show" or action.kind == "ai" then
-        local bin = M.kubectl_bin(config)
-        local ok, _, err = util.run_cmd({ bin, "version", "--client", "--output=yaml" })
-        if not ok then
-            ui.ai_print(
-                ai_pane,
-                "kubectl not available ("
-                    .. tostring(bin)
-                    .. "): "
-                    .. tostring(err)
-                    .. "\nSet kube.kubectl = \"/absolute/path/to/kubectl\" in wezai config if needed.",
-                "error"
-            )
-            return
-        end
-    end
     local count = opts.count or embedded_n
-    action.run({
+    local ctx = {
         window = window,
         pane = shell_pane,
         ai_pane = ai_pane,
         config = config,
         extra = extra,
         count = count,
-    })
+    }
+    local function go()
+        if action.kind == "show" or action.kind == "ai" then
+            local bin = M.kubectl_bin(config)
+            local ok, _, err = util.run_cmd({ bin, "version", "--client", "--output=yaml" })
+            if not ok then
+                ui.ai_print(
+                    ai_pane,
+                    "kubectl not available ("
+                        .. tostring(bin)
+                        .. "): "
+                        .. tostring(err)
+                        .. "\nSet kube.kubectl = \"/absolute/path/to/kubectl\" in wezai config if needed.",
+                    "error"
+                )
+                return
+            end
+        end
+        action.run(ctx)
+    end
+    if action.kind == "show" then
+        ui.with_busy(ai_pane, {
+            title = "kube",
+            command = "@kube:" .. action.id,
+            config = config,
+        }, go)
+        return
+    end
+    go()
 end
 
 function M.open_picker(window, pane, config)

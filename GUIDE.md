@@ -9,7 +9,7 @@ Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `
 | Pane | Role |
 |------|------|
 | **Left (shell)** | Your real terminal. cwd, git repo, commands you run. Stay focused here. |
-| **Right (wezai)** | Output only — answers, diffs, `git status`, terraform validate, progress. Not a shell. While Ask/Edit waits on a slow/local model, this pane scrolls timed status (elapsed, timeout %, hints) so long waits stay visible. |
+| **Right (wezai)** | Output only — answers, diffs, `git status`, terraform validate, weather, progress. Not a shell. While Ask/Edit or a catalog command waits, this pane scrolls a spinner / timed status so it does not look frozen. |
 
 | Entry point | When to use it |
 |-------------|----------------|
@@ -374,6 +374,8 @@ Lua still works if you want it in `wezterm.lua`: `weather = { zip = "90210", cou
 `CTRL+SHIFT+W` is WezTerm’s **close tab** — the weather shortcut is `CTRL+ALT+W`.
 
 ### Show (no model)
+
+These print the command in the wezai pane immediately, then a spinner until the forecast (or geocode) returns.
 
 | Action | Meaning |
 |--------|---------|

@@ -91,7 +91,6 @@ function M.ensure_cwd(pane)
 end
 
 local function print_show(ai_pane, title, body)
-    ui.begin_turn(ai_pane, os.date("%H:%M:%S") .. "  tf")
     ui.ai_print(ai_pane, title, "attach")
     ui.ai_print(ai_pane, body ~= "" and body or "(empty)", "plain")
 end
@@ -780,30 +779,42 @@ function M.run_action(window, pane, config, id, extra)
         ui.ai_print(ai_pane, "Unknown @tf:" .. tostring(id) .. " — try @tf for the picker", "error")
         return
     end
-    if action.kind == "show" or action.kind == "ai" then
-        local bin = M.terraform_bin(config)
-        local ok, _, verr = util.run_cmd({ bin, "version" })
-        if not ok then
-            ui.ai_print(
-                ai_pane,
-                "terraform not available ("
-                    .. tostring(bin)
-                    .. "): "
-                    .. tostring(verr)
-                    .. "\nSet tf.terraform = \"/absolute/path/to/terraform\" in wezai config if needed.",
-                "error"
-            )
-            return
-        end
-    end
-    action.run({
+    local ctx = {
         window = window,
         pane = shell_pane,
         ai_pane = ai_pane,
         config = config,
         cwd = cwd,
         extra = extra,
-    })
+    }
+    local function go()
+        if action.kind == "show" or action.kind == "ai" then
+            local bin = M.terraform_bin(config)
+            local ok, _, verr = util.run_cmd({ bin, "version" })
+            if not ok then
+                ui.ai_print(
+                    ai_pane,
+                    "terraform not available ("
+                        .. tostring(bin)
+                        .. "): "
+                        .. tostring(verr)
+                        .. "\nSet tf.terraform = \"/absolute/path/to/terraform\" in wezai config if needed.",
+                    "error"
+                )
+                return
+            end
+        end
+        action.run(ctx)
+    end
+    if action.kind == "show" then
+        ui.with_busy(ai_pane, {
+            title = "tf",
+            command = "@tf:" .. action.id,
+            config = config,
+        }, go)
+        return
+    end
+    go()
 end
 
 function M.open_picker(window, pane, config)

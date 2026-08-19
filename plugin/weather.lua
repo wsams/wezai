@@ -703,7 +703,6 @@ function M.collect_attach(syn, config)
 end
 
 local function print_show(ai_pane, title, body)
-    ui.begin_turn(ai_pane, os.date("%H:%M:%S") .. "  weather")
     ui.ai_print(ai_pane, title, "attach")
     ui.ai_print(ai_pane, body ~= "" and body or "(empty)", "plain")
 end
@@ -778,34 +777,40 @@ add_action({
             if trim(raw) == "" then
                 return
             end
-            local loc, err = M.set_zip(ctx.config, raw)
             local ap = ui.ensure_ai_pane(ctx.window, ctx.pane, ctx.config)
-            if err then
-                ui.ai_print(ap, err, "error")
-                return
-            end
-            if loc.cleared then
-                local fallback = loc.zip and tostring(loc.zip) or "(none in wezterm.lua)"
+            ui.with_busy(ap, {
+                title = "weather",
+                command = "@weather:zip " .. trim(raw),
+                config = ctx.config,
+            }, function()
+                local loc, err = M.set_zip(ctx.config, raw)
+                if err then
+                    ui.ai_print(ap, err, "error")
+                    return
+                end
+                if loc.cleared then
+                    local fallback = loc.zip and tostring(loc.zip) or "(none in wezterm.lua)"
+                    ui.ai_print(
+                        ap,
+                        "Cleared plugin zip overlay. wezterm.lua weather.zip = " .. fallback,
+                        "success"
+                    )
+                    return
+                end
                 ui.ai_print(
                     ap,
-                    "Cleared plugin zip overlay. wezterm.lua weather.zip = " .. fallback,
+                    "Saved zip "
+                        .. loc.zip
+                        .. " ("
+                        .. loc.country
+                        .. ") → "
+                        .. (loc.place or "")
+                        .. "\nPersisted in "
+                        .. M.store_path(ctx.config)
+                        .. " (overrides weather.zip until you @weather:zip clear).",
                     "success"
                 )
-                return
-            end
-            ui.ai_print(
-                ap,
-                "Saved zip "
-                    .. loc.zip
-                    .. " ("
-                    .. loc.country
-                    .. ") → "
-                    .. (loc.place or "")
-                    .. "\nPersisted in "
-                    .. M.store_path(ctx.config)
-                    .. " (overrides weather.zip until you @weather:zip clear).",
-                "success"
-            )
+            end)
         end
         local from_extra = trim(ctx.extra or "")
         if from_extra ~= "" then
@@ -906,13 +911,24 @@ function M.run_action(window, pane, config, id, extra)
         ui.ai_print(ai_pane, "Unknown @weather:" .. tostring(id) .. " — try @weather for the picker", "error")
         return
     end
-    action.run({
+    local ctx = {
         window = window,
         pane = shell_pane,
         ai_pane = ai_pane,
         config = config,
         extra = extra,
-    })
+    }
+    if action.kind == "show" then
+        ui.with_busy(ai_pane, {
+            title = "weather",
+            command = "@weather:" .. action.id,
+            config = config,
+        }, function()
+            action.run(ctx)
+        end)
+        return
+    end
+    action.run(ctx)
 end
 
 function M.open_picker(window, pane, config)

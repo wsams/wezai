@@ -72,7 +72,7 @@ Do **not** leave `update_all()` / `reload_configuration()` at config file scope 
 | `CTRL+ALT+W` | Palette scoped to `@weather` (not `CTRL+SHIFT+W` — that is WezTerm’s close tab) |
 | `CTRL+SHIFT+H` | Palette scoped to `@history` |
 
-Stay on your **shell** pane. The right split is **output only** (answers, diffs, git/kube/tf/weather status). Don’t run git from that pane — wezai always uses your shell’s cwd.
+Stay on your **shell** pane. The right split is **output only** (answers, diffs, git/kube/tf/weather status). Catalog commands print immediately and spin `waiting…` until output arrives, so a slow `@weather:now` does not look frozen. Don’t run git from that pane — wezai always uses your shell’s cwd.
 
 ```
 CTRL+SHIFT+P  →  type @git:status  →  Enter

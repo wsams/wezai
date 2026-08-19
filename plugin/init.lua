@@ -725,7 +725,26 @@ local function prompt_for_ai(window, pane, config, opts)
         end
 
         local function run_prepared(req_line)
+            local ai_pane = ui.ensure_ai_pane(win, p, config)
+            local busy
+            if type(req_line) == "string"
+                and (
+                    req_line:find("@weather", 1, true)
+                    or req_line:find("@git", 1, true)
+                    or req_line:find("@kube", 1, true)
+                    or req_line:find("@tf", 1, true)
+                )
+            then
+                busy = ui.start_busy(ai_pane, {
+                    title = "attach",
+                    command = util.truncate(req_line, 100),
+                    config = config,
+                })
+            end
             local request, err = context.prepare_request(win, p, req_line, selection, config)
+            if busy then
+                busy.stop()
+            end
             if err then
                 -- Missing @attach paths → fuzzy pick. #create is handled in context (new files OK).
                 if err:find("file not found", 1, true) then
@@ -1109,18 +1128,24 @@ palette.handlers = {
     update_plugin = function(win, p, cfg)
         local ai_pane = ui.ensure_ai_pane(win, p, cfg)
         ui.ai_print(ai_pane, util.install_report(), "system")
-        ui.ai_print(ai_pane, "Syncing wezai git checkout (fetch + ff-only pull)…", "status")
-        local git_ok, git_log = util.sync_plugin_git()
+        local git_ok, git_log
+        local upd_ok, upd_err = true, nil
+        ui.with_busy(ai_pane, {
+            title = "update",
+            command = "git fetch + pull --ff-only  ·  wezterm.plugin.update_all()",
+            config = cfg,
+        }, function()
+            git_ok, git_log = util.sync_plugin_git()
+            upd_ok, upd_err = pcall(function()
+                wezterm.plugin.update_all()
+            end)
+        end)
         if git_log and git_log ~= "" then
             ui.ai_print(ai_pane, git_log, git_ok and "plain" or "warn")
         end
         wezterm.log_info("wezai: sync_plugin_git ok=" .. tostring(git_ok) .. " " .. tostring(git_log))
-        ui.ai_print(ai_pane, "wezterm.plugin.update_all()… then reload.", "status")
-        local ok, err = pcall(function()
-            wezterm.plugin.update_all()
-        end)
-        if not ok then
-            ui.ai_print(ai_pane, "update_all failed: " .. tostring(err), "error")
+        if not upd_ok then
+            ui.ai_print(ai_pane, "update_all failed: " .. tostring(upd_err), "error")
             return
         end
         -- Do not call update_all/reload at config file scope — that loops.
