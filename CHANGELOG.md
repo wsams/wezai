@@ -1,3 +1,11 @@
+# [1.13.0](https://github.com/wsams/wezai/compare/v1.12.1...v1.13.0) (2026-08-19)
+
+
+### Features
+
+* palette fetch+reload and README cache troubleshooting ([6c81345](https://github.com/wsams/wezai/commit/6c81345698a9f4c2acdcc7040ae62d385fdd810b))
+* show command + spinner while catalog actions wait ([36ec5b2](https://github.com/wsams/wezai/commit/36ec5b280adbeffdb657b5c82ed1c76a228c6600))
+
 ## [1.12.1](https://github.com/wsams/wezai/compare/v1.12.0...v1.12.1) (2026-08-19)
 
 
