@@ -577,9 +577,14 @@ local function resolve_git_dir(repo_dir)
         return nil
     end
     local git_path = repo_dir .. SEP .. ".git"
-    if M.path_exists_as_dir(git_path) then
+    -- Must not call run_child_process here: version_label runs inside plugin
+    -- require(), and WezTerm cannot yield across that C-call boundary.
+    -- Directory checkout: `.git/HEAD` is a regular file.
+    local head_ok, head = M.read_text_file(git_path .. SEP .. "HEAD", 4096)
+    if head_ok and type(head) == "string" and trim(head) ~= "" then
         return git_path
     end
+    -- Worktree / submodule: `.git` is a file `gitdir: <path>`.
     local ok, content = M.read_text_file(git_path, 4096)
     if not ok or type(content) ~= "string" then
         return nil
@@ -638,32 +643,13 @@ local function read_git_sha_from_head_file(repo_dir)
     return nil
 end
 
-local function git_rev_parse(repo_dir)
-    local git = M.resolve_executable("git", {
-        candidates = {
-            "/usr/bin/git",
-            "/usr/local/bin/git",
-            "/opt/homebrew/bin/git",
-        },
-    })
-    if not git then
-        git = "git"
-    end
-    local ok, stdout = M.run_cmd({ git, "-C", repo_dir, "rev-parse", "--short=7", "HEAD" })
-    if ok then
-        local sha = trim(stdout or "")
-        if sha:match("^%x+$") and #sha >= 7 then
-            return sha:sub(1, 7)
-        end
-    end
-    return nil
-end
-
 local function read_git_sha(repo_dir)
     if not repo_dir or repo_dir == "" then
         return nil
     end
-    return read_git_sha_from_head_file(repo_dir) or git_rev_parse(repo_dir)
+    -- File-only: spawning git during plugin require() crashes WezTerm
+    -- (`attempt to yield across a C-call boundary`).
+    return read_git_sha_from_head_file(repo_dir)
 end
 
 local function bundled_semver()

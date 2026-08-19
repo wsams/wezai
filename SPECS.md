@@ -25,7 +25,7 @@ User-facing walkthroughs: [GUIDE.md](GUIDE.md). Install / config sketch: [README
 
 Brand string in UI/logs: **`wezai`**. Never introduce third-party product branding in UI strings.
 
-**Install version** is shown in every command-palette title and the AI output-pane banner (also logged on load). Prefer bundled `plugin/version.lua` (kept in sync with semantic-release / `package.json`) so Flatpak/Bazzite installs still show a semver when `package.json` sits outside the Lua dir. Append a 7-char git sha when `.git` is visible so `update_all` pulls on `main` are visible between releases. Format via `util.brand_with_version()` — e.g. `wezai v1.10.0+fc6d5b5`. Last resort is `dev`, never a bare `?`.
+**Install version** is shown in every command-palette title and the AI output-pane banner (also logged on load). Prefer bundled `plugin/version.lua` (kept in sync with semantic-release / `package.json`) so Flatpak/Bazzite installs still show a semver when `package.json` sits outside the Lua dir. Append a 7-char git sha by **reading** `.git/HEAD` (and ref files) — never `git` / `run_child_process` here, because `version_label()` runs inside plugin `require()` and WezTerm cannot yield across that C-call. Format via `util.brand_with_version()` — e.g. `wezai v1.10.0+fc6d5b5`. Last resort is `dev`, never a bare `?`.
 
 ---
 
@@ -470,6 +470,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 6. Multi-return APIs that use an error slot must return **`nil` on success**, never `""` (Lua truthiness).
 7. Never commit secrets (API keys in `wezterm.lua` stay user-local).
 8. UI copy and logs say **wezai**, not other product names.
+9. Do not call `wezterm.run_child_process` from a module main chunk (`require`). Config load will fail with `attempt to yield across a C-call boundary`.
 
 ---
 
@@ -486,7 +487,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] `@pick` / palette Attach file opens fuzzy selector.
 - [ ] Large `@file` attaches as truncated head+tail, not hard error.
 - [ ] Pick model / palette actions reuse **one** AI pane (no second split).
-- [ ] Palette title and AI pane banner show install version (`wezai v…` / sha), never `wezai ?` when `plugin/version.lua` is present.
+- [ ] Palette title and AI pane banner show install version (`wezai v…` / sha), never `wezai ?` when `plugin/version.lua` is present. Config load must not error with `yield across a C-call boundary`.
 - [ ] `wezai.apply_to_config(config)` with no table binds keys using Ollama HTTP defaults; `wezai.env` / `WEZAI_*` overlay model, zip, and keys.
 - [ ] Palette **Update wezai plugin** pulls the GitHub cache and reloads (do not put `update_all()` at config file scope).
 - [ ] Fish dialect: no bogus `; end` on one-liners; macOS: no `du --exclude`.
