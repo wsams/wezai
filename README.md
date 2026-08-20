@@ -70,7 +70,7 @@ Do **not** leave `update_all()` / `reload_configuration()` at config file scope 
 | `CTRL+SHIFT+K` | Palette scoped to `@kube` |
 | `CTRL+ALT+T` | Palette scoped to `@tf` (not `CTRL+SHIFT+T` — that is WezTerm’s new tab) |
 | `CTRL+ALT+W` | Palette scoped to `@weather` (not `CTRL+SHIFT+W` — that is WezTerm’s close tab) |
-| `CTRL+SHIFT+H` | Palette scoped to `@history` |
+| `CTRL+SHIFT+H` | Palette scoped to `@history` (fuzzy unique commands; Delete like fish) |
 
 Stay on your **shell** pane. The right split is **output only** (answers, diffs, git/kube/tf/weather status). Catalog commands print immediately and spin `waiting…` until output arrives, so a slow `@weather:now` does not look frozen. Don’t run git from that pane — wezai always uses your shell’s cwd.
 
@@ -164,9 +164,10 @@ wezai.apply_to_config(config, {
 
   ai_pane = { enabled = true, direction = "Right", size_percent = 35, pad_cols = 2 },
   history = {
-    max_shell = 500,
-    palette_n = 200,
-    tail_bytes = 4 * 1024 * 1024,
+    max_shell = 20000, -- unique commands indexed (newest first)
+    palette_n = 200, -- unified CTRL+SHIFT+P
+    search_n = 12000, -- CTRL+SHIFT+H / @history scope
+    tail_bytes = 8 * 1024 * 1024,
     include_scrollback = true,
   },
   git = { default_branch = nil, max_attach_bytes = 80000 },
@@ -204,7 +205,8 @@ plugin/
   palette.lua    -- CTRL+SHIFT+P unified palette
   ui.lua         -- output pane, styling, InputSelector
   session.lua    -- chat memory + pinned @/# files + drafts
-  history.lua    -- shell/scrollback history
+  history.lua    -- shell/scrollback history (auto-detect fish/zsh/bash)
+  history_store.lua / history_edit.py  -- unique index, fuzzy, fish-style delete
   git.lua        -- @git action catalog
   kube.lua       -- @kube kubectl catalog
   tf.lua         -- @tf terraform catalog

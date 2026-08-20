@@ -21,6 +21,7 @@ do
         "tf.lua",
         "weather.lua",
         "history.lua",
+        "history_store.lua",
         "files.lua",
         "composer.lua",
         "confirm.lua",

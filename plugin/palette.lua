@@ -42,8 +42,11 @@ local M = {}
 -- Set by init.lua: functions(win, pane, config)
 M.handlers = {}
 
-local function hist_cap(config)
+local function hist_cap(config, scoped)
     local h = (config and config.history) or {}
+    if scoped then
+        return h.search_n or 12000
+    end
     return h.palette_n or 200
 end
 
@@ -201,13 +204,21 @@ function M.show(window, pane, config, opts)
             end
         end
 
+        local hist_scoped = scope and tostring(scope):find("^history") ~= nil
         if hist_filter then
-            local cok, entries_or_err = pcall(history.collect_entries, window, pane, config, hist_filter)
+            if hist_scoped then
+                add(choices, handlers, "hist:search", "@history  Search entire history…", function(win, p, cfg)
+                    history.prompt_search(win, p, cfg)
+                end)
+            end
+            local cap = hist_cap(config, hist_scoped)
+            local cok, entries_or_err = pcall(history.collect_entries, window, pane, config, hist_filter, {
+                shell_limit = cap,
+            })
             if not cok then
                 wezterm.log_warn("wezai: history collect failed: " .. tostring(entries_or_err))
             else
                 local hist_entries = entries_or_err or {}
-                local cap = hist_cap(config)
                 local n = 0
                 for _, e in ipairs(hist_entries) do
                     n = n + 1
@@ -240,7 +251,8 @@ function M.show(window, pane, config, opts)
         elseif scope == "weather" then
             title = brand .. " · @weather  (type to filter)"
         elseif scope and tostring(scope):find("^history") then
-            title = brand .. " · @history  (type to filter)"
+            local kind = history.detect_kind(pane)
+            title = brand .. " · @history · " .. kind .. "  (type to filter)"
         else
             title = brand .. " · type @git / @kube / @tf / @weather / @history / Ask…"
         end
@@ -259,7 +271,10 @@ function M.show(window, pane, config, opts)
                     ui.ai_print(ai_pane, "Palette action failed: " .. tostring(rerr), "error")
                 end
             end
-        end, { fuzzy = true })
+        end, {
+            fuzzy = true,
+            fuzzy_description = hist_scoped and "Fuzzy history: " or "Fuzzy matching: ",
+        })
     end)
 
     if not ok then
