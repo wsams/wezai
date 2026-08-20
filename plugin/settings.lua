@@ -72,12 +72,14 @@ local BASE = {
         compact_chars = 4000,
     },
     history = {
-        max_shell = 500,
+        -- Unique commands loaded from the detected shell's histfile (newest first).
+        max_shell = 20000,
         max_session = 50,
         attach_n = 40,
         include_scrollback = true,
-        palette_n = 200,
-        tail_bytes = 4 * 1024 * 1024,
+        palette_n = 200, -- rows in the unified CTRL+SHIFT+P palette
+        search_n = 12000, -- rows in the history-scoped palette (CTRL+SHIFT+H)
+        tail_bytes = 8 * 1024 * 1024,
     },
     git = {
         default_branch = nil,

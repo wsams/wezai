@@ -71,7 +71,9 @@ plugin/
   composer.py       -- readline-less TUI: live @/# fuzzy paths (cwd + ~/ / ../), draft, OSC user vars
   confirm.lua       -- Apply/Cancel split of the shell pane (AI pane stays visible)
   confirm.py        -- readline-less TUI: a/c Apply/Cancel via OSC user var
-  history.lua       -- fish/zsh/bash history + scrollback + session events
+  history.lua       -- fish/zsh/bash history palette, native fish + histfile backends
+  history_store.lua -- pure parsers, unique newest-first index, fuzzy, exact rewrite
+  history_edit.py   -- in-shell bash/zsh histfile rewrite for delete+reload
   git.lua           -- @git action catalog
   kube.lua          -- @kube action catalog
   tf.lua            -- @tf terraform action catalog
@@ -232,10 +234,15 @@ Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, 
 
 ### 5.3 History
 
-- Sources: fish/zsh/bash history files (tailed), optional scrollback, session events (ask/ai-cmd/edit).
-- Config: `history.max_shell`, `palette_n`, `tail_bytes`, `attach_n`, `include_scrollback`, `max_session`.
-- Row actions: Run / Insert / Explain / Attach & ask / Copy.
+Shell is **auto-detected** from the pane (`fish` / `zsh` / `bash`). The same palette actions apply on every shell: **Run / Insert / Explain / Attach & ask / Copy / Delete**.
+
+- **Fish:** list via native `history` (`fish --no-config`) when available, else `fish_history`; **Delete** sends `history delete --exact --case-sensitive` to the live pane (session + file, same as the fish pager).
+- **Bash / zsh:** unique newest-first index from `HISTFILE` (pane `/proc/pid/environ` on Linux, then `~/.bash_history` / `~/.zsh_history`). **Delete** flushes (`history -a` / `fc -W`), rewrites the file (all exact copies), reloads in-memory history — one synchronous chain via `history_edit.py`.
+- **Search:** history-scoped palette (`CTRL+SHIFT+H`) loads up to `search_n` unique commands (default 12000) into WezTerm’s fuzzy `InputSelector`. **Search entire history…** prompts for a query and filters the full unique set (`fzf -f` when present, else subsequence token-AND). Unified `CTRL+SHIFT+P` still shows only `palette_n` recent rows (default 200) so the full palette stays snappy.
+- Sources: detected-shell histfile (tailed, unique, mtime/size cached), optional scrollback, session events (ask/ai-cmd/edit).
+- Config: `history.max_shell` (unique cap, default 20000), `search_n`, `palette_n`, `tail_bytes` (default 8 MiB), `attach_n`, `include_scrollback`, `max_session`.
 - Attach limits: `@history:40` (all, N entries), `@history:shell:40` / `@history:ai:20` / `@history:failed:15` (filter + N). Default limit = `attach_n` (40). Bare `@history` / `@history:shell` open the palette.
+
 
 ### 5.4 `@git` catalog (`git.lua`)
 
@@ -421,7 +428,7 @@ Important fields (see `settings.lua` for full defaults):
 | `tf.terraform`, `tf.confirm_mutate`, `tf.max_attach_bytes` | terraform binary / mutate confirms / attach cap |
 | `weather.zip`, `weather.country`, `weather.units`, `weather.path` | Open-Meteo location (plugin `@weather:zip` overlay beats `zip` / `WEZAI_WEATHER_ZIP`) |
 | `git.default_branch`, `git.confirm_push`, `git.max_attach_bytes` | git catalog |
-| `history.*` | Shell/session history limits |
+| `history.*` | Shell/session history: `max_shell` unique cap, `search_n` (CTRL+SHIFT+H), `palette_n` (unified), `tail_bytes`, delete/search backends |
 | `stats.*` | Usage DB |
 | `rocks_bin` | Optional luarocks LUA_PATH (rarely needed) |
 
@@ -506,6 +513,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] Ask `@weather should I bring a jacket?` attaches current conditions (needs a zip).
 - [ ] Stats banner/line appears; `~/.local/share/wezai/stats.json` updates.
 - [ ] Git/kube/tf/weather/history always use shell cwd (not AI pane).
+- [ ] `@history` / `CTRL+SHIFT+H` fuzzy-filters unique commands from the detected shell (fish native `history` or bash/zsh `HISTFILE`); row **Delete** removes all copies (fish `history delete`, bash/zsh flush+rewrite+reload).
 - [ ] Local Ollama HTTP: with an unloaded large model, `timeout` ≥ load+warmup still returns JSON (not curl 28 / 0 bytes); second Ask is fast while model stays loaded.
 - [ ] During a multi-minute Ask wait, AI pane scrolls progress with model/endpoint, elapsed vs timeout %, and rotating hints (not only a bare “thinking…” line).
 - [ ] Chatty model wrapping JSON in prose still parses via `extract_json_object` when a single object is present.

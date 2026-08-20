@@ -129,7 +129,7 @@ Type to fuzzy-filter. Labels start with namespaces so filtering is easy:
 | `@kube` | All kubectl actions |
 | `@tf` | All terraform actions |
 | `@weather` | Open-Meteo current / forecast / set zip |
-| `@history` | Recent shell / AI commands |
+| `@history` | Unique shell history (detected fish/zsh/bash), type to fuzzy-filter |
 | `Ask` / `Fix` / `model` | Core helpers |
 
 ### Core actions
@@ -402,11 +402,19 @@ Bare `@weather` opens the weather palette. Add a question after `@weather` / `@w
 
 ## `@history`
 
-Recent shell history (fish / zsh / bash), scrollback, and wezai session events appear as `@history …` rows in the palette.
+The history palette uses the **detected shell** (fish / zsh / bash) with the same actions on every shell.
 
-1. `CTRL+SHIFT+P` → type `@history` or `docker`  
-2. Pick a row  
-3. Choose: **Run** / **Insert** / **Explain** / **Attach & ask** / **Copy**
+1. `CTRL+SHIFT+H` (or `CTRL+SHIFT+P` → type `@history`)  
+2. Type to fuzzy-filter unique commands (newest first)  
+3. Pick a row → **Run** / **Insert** / **Explain** / **Attach & ask** / **Copy** / **Delete**
+
+**Search:** the history-scoped palette loads up to `search_n` unique commands (default 12 000) so WezTerm’s fuzzy matcher can reach far back. For the rest of a huge histfile, pick **Search entire history…** and type a query (`fzf -f` if installed, otherwise subsequence matching). The unified `CTRL+SHIFT+P` list stays at `palette_n` (200) recent rows.
+
+**Delete** removes **all copies** of that command, like fish’s history pager:
+
+- **fish** — `history delete --exact --case-sensitive` in the live pane (session + `fish_history`)
+- **bash** — `history -a`, rewrite `HISTFILE`, `history -c && history -r`
+- **zsh** — `fc -W`, rewrite `HISTFILE`, `fc -p`
 
 | You type in Ask | Result |
 |-----------------|--------|
@@ -418,8 +426,9 @@ Recent shell history (fish / zsh / bash), scrollback, and wezai session events a
 | `@history how did I deploy?` | Attach history chunk + ask |
 | `@history:shell:30 what docker cmds?` | Attach 30 shell rows + ask |
 
-History files are read from the **tail** only (default last 4 MiB). Fuzzy filter applies to the rows loaded into the palette (`palette_n`), not your entire lifetime history.
+Histfiles are read from the **tail** (default last 8 MiB) and **deduplicated newest-first**. On Linux, bash/zsh `HISTFILE` is taken from the pane process environment when `/proc/pid/environ` is readable.
 
+---
 ---
 
 ## Recipes
@@ -532,7 +541,7 @@ CTRL+I → @weather should I bring a jacket tonight?
 | `no pane cwd` | Focus the **shell** pane, not the wezai pane; then open the palette again |
 | Overlay covers the diff / right pane | Edit confirm should split under the shell. Palette → **Update wezai plugin**. Fallback InputSelector (no python3) still covers the tab. |
 | Palette is WezTerm’s, not wezai | Reload config; wezai overrides `CTRL+SHIFT+P`. Or set `keybinding_palette` |
-| Empty `@history` | Run commands in fish/zsh/bash first; check `history.tail_bytes` / `palette_n` |
+| Empty `@history` | Run commands in fish/zsh/bash first; check `history.tail_bytes` / `search_n`. Bash often needs `histappend` (or a `history -a` in `PROMPT_COMMAND`) so the current session is on disk. |
 | No `@tf` in palette | Need wezai ≥ 1.5.0 with `plugin/tf.lua`. Palette → **Update wezai plugin**, then reload. Log should say `tf.lua ok`. Shortcut is `CTRL+ALT+T` (not `CTRL+SHIFT+T`) |
 | No `@weather` / “No zip set” | Need `plugin/weather.lua`. Set `@weather:zip 90210` or `WEZAI_WEATHER_ZIP=90210` in `wezai.env`. Shortcut is `CTRL+ALT+W` (not `CTRL+SHIFT+W`) |
 | Palette title is `wezai ?` | Stale plugin without `plugin/version.lua`. Palette → **Update wezai plugin**; log should show `wezai v1.12.0…` not `?` |
