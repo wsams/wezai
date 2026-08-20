@@ -44,6 +44,7 @@ local overlay = settings.config_from_env_map({
     WEZAI_WEATHER_ZIP = "02139",
     WEZAI_WEATHER_COUNTRY = "US",
     WEZAI_KUBE_NS = "kube-system",
+    WEZAI_DOCKER_BIN = "/usr/bin/docker",
     OPENAI_API_KEY = "from-openai",
 })
 eq(overlay.type, "http", "type")
@@ -52,6 +53,7 @@ eq(overlay.timeout, 450, "timeout number")
 eq(overlay.api_key, "from-openai", "openai fallback")
 eq(overlay.weather.zip, "02139", "weather zip")
 eq(overlay.kube.namespace, "kube-system", "kube ns")
+eq(overlay.docker.docker, "/usr/bin/docker", "docker bin")
 eq(#overlay.models, 3, "models csv count")
 eq(overlay.models[2], "b", "models csv trim")
 
@@ -88,6 +90,8 @@ local base = settings.finalize(nil, { skip_live_env = true })
 eq(base.model, "llama3.2", "default model")
 eq(base.timeout, 300, "default timeout")
 eq(base.weather.country, "US", "default weather country")
+eq(base.keybinding_docker.key, "d", "CTRL+SHIFT+D docker")
+eq(base.docker.confirm_mutate, true, "docker confirm default")
 
 -- process-like map wins over file text when passed as env_map after env_text
 local stacked = settings.finalize(nil, {

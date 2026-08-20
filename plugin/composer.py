@@ -24,6 +24,8 @@ SYNTHETICS = [
     "git:",
     "kube:",
     "tf:",
+    "docker:",
+    "weather:",
     "history",
     "clipboard",
     "selection",
@@ -35,6 +37,8 @@ RESERVED_HEADS = {
     "kube",
     "tf",
     "terraform",
+    "docker",
+    "weather",
     "history",
     "clipboard",
     "selection",
@@ -378,6 +382,8 @@ def is_reserved_path(pathpart: str) -> bool:
             "kube",
             "tf",
             "terraform",
+            "docker",
+            "weather",
             "dir",
         ):
             if pathpart == head or pathpart.startswith(head + ":") or pathpart.startswith(head + "/"):
@@ -685,6 +691,9 @@ def _self_test() -> int:
     assert any(rel.startswith("README") or "AGENTS" in rel for _, rel, _ in m2) or True
     assert is_reserved_path("git")
     assert is_reserved_path("git:status")
+    assert is_reserved_path("docker")
+    assert is_reserved_path("docker:ps")
+    assert is_reserved_path("weather:now")
     assert not is_reserved_path("init.lua")
     assert not is_reserved_path("plugin/")
     buf = list("see @in")

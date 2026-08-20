@@ -1,6 +1,6 @@
 # wezai guide
 
-Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `@tf`, `@weather`, `@history`, and file edits.
+Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `@tf`, `@docker`, `@weather`, `@history`, and file edits.
 
 ---
 
@@ -9,7 +9,7 @@ Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `
 | Pane | Role |
 |------|------|
 | **Left (shell)** | Your real terminal. cwd, git repo, commands you run. Stay focused here. |
-| **Right (wezai)** | Output only — answers, diffs, `git status`, terraform validate, weather, progress. Not a shell. While Ask/Edit or a catalog command waits, this pane scrolls a spinner / timed status so it does not look frozen. |
+| **Right (wezai)** | Output only — answers, diffs, `git status`, terraform validate, docker ps, weather, progress. Not a shell. While Ask/Edit or a catalog command waits, this pane scrolls a spinner / timed status so it does not look frozen. |
 
 | Entry point | When to use it |
 |-------------|----------------|
@@ -17,6 +17,7 @@ Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `
 | `CTRL+SHIFT+P` | Palette — jump to any action without typing a full Ask line |
 | `CTRL+SHIFT+G` | Same palette, pre-filtered to `@git` |
 | `CTRL+SHIFT+K` | Same palette, pre-filtered to `@kube` |
+| `CTRL+SHIFT+D` | Same palette, pre-filtered to `@docker` |
 | `CTRL+ALT+T` | Same palette, pre-filtered to `@tf` |
 | `CTRL+ALT+W` | Same palette, pre-filtered to `@weather` |
 | `CTRL+SHIFT+H` | Same palette, pre-filtered to `@history` |
@@ -105,6 +106,7 @@ Undo: palette → **Undo last edit**.
 | `@git:diff` | `@git:diff write a PR summary` |
 | `@tf:state` | `@tf:state what’s orphaned?` |
 | `@tf:validate` | `@tf:validate why is this failing?` |
+| `@docker:ps` | `@docker:ps what’s using port 5432?` |
 | `@weather:now` | `@weather should I bring a jacket?` |
 | `@dir:.` | `@dir:src what modules exist?` |
 | `@history` | `@history what docker commands did I run?` |
@@ -128,6 +130,7 @@ Type to fuzzy-filter. Labels start with namespaces so filtering is easy:
 | `@git:soft` / `@git:rebase` | Soft reset / interactive rebase (any N) |
 | `@kube` | All kubectl actions |
 | `@tf` | All terraform actions |
+| `@docker` | Docker / Compose actions |
 | `@weather` | Open-Meteo current / forecast / set zip |
 | `@history` | Unique shell history (detected fish/zsh/bash), type to fuzzy-filter |
 | `Ask` / `Fix` / `model` | Core helpers |
@@ -345,6 +348,54 @@ Ask-with-context attach tokens: `@tf:state`, `@tf:validate`, `@tf:output`, `@tf:
 
 ---
 
+## `@docker` actions
+
+Open via `CTRL+SHIFT+P` → type `@docker`, or `CTRL+SHIFT+D`, or Ask → `@docker` / `@docker:ps`.
+
+Commands use the **shell pane cwd** for Compose (`docker compose` in that directory). wezai resolves the `docker` binary the same way as kubectl/terraform (Homebrew + login shell), or set `docker.docker = "/usr/bin/docker"`.
+
+**Mutating** actions (`restart`, `rm`, `compose-down`) confirm when `docker.confirm_mutate` is true (default). AI helpers gather read-only context (ps / compose ps / selection) and steer toward logs / inspect — not `rm` / `compose down` unless you asked.
+
+### Show (no model)
+
+These print the command in the wezai pane immediately, then a spinner until docker returns.
+
+| Action | Meaning |
+|--------|---------|
+| `@docker:ps` | Running containers |
+| `@docker:ps-a` | All containers (`ps -a`) |
+| `@docker:images` | Local images |
+| `@docker:compose-ps` | `docker compose ps` in the shell cwd |
+| `@docker:df` | `docker system df` |
+
+### Shell helpers
+
+| Action | Notes |
+|--------|--------|
+| `@docker:logs` / `logs-f` | Prompt for container; `--tail=N` via `@docker:logs200` |
+| `@docker:exec` | `docker exec -it <container> sh` |
+| `@docker:compose-up` / `compose-down` | Detached up; down confirms |
+| `@docker:compose-logs` | Compose logs `--tail=N` |
+| `@docker:pull` | Prompt for image |
+| `@docker:restart` / `rm` | Confirm before run |
+
+### AI
+
+| Action | What it does |
+|--------|----------------|
+| `@docker:diagnose` | Attach `ps -a` + compose ps (+ selection) → diagnose |
+| `@docker:explain-sel` | Explain selected docker/compose output |
+
+```
+CTRL+SHIFT+D → @docker:ps
+CTRL+I → @docker:ps what's using 5432?
+CTRL+I → @docker:diagnose   (select a crash log first)
+```
+
+Ask-with-context attach tokens: `@docker:ps`, `@docker:ps-a`, `@docker:images`, `@docker:compose-ps`, `@docker:df`. Bare `@docker` opens the palette. `@docker should I restart?` attaches `ps`.
+
+---
+
 ## `@weather` actions
 
 Open via `CTRL+SHIFT+P` → type `@weather`, or `CTRL+ALT+W`, or Ask → `@weather` / `@weather:now`.
@@ -402,11 +453,13 @@ Bare `@weather` opens the weather palette. Add a question after `@weather` / `@w
 
 ## `@history`
 
-The history palette uses the **detected shell** (fish / zsh / bash) with the same actions on every shell.
+The history palette uses the **detected shell** (fish / zsh / bash) with the same actions on those shells.
 
 1. `CTRL+SHIFT+H` (or `CTRL+SHIFT+P` → type `@history`)  
 2. Type to fuzzy-filter unique commands (newest first)  
 3. Pick a row → **Run** / **Insert** / **Explain** / **Attach & ask** / **Copy** / **Delete**
+
+PowerShell (and unknown shells) still list scrollback / session events, but histfile search and **Delete** are not offered.
 
 **Search:** the history-scoped palette loads up to `search_n` unique commands (default 12 000) so WezTerm’s fuzzy matcher can reach far back. For the rest of a huge histfile, pick **Search entire history…** and type a query (`fzf -f` if installed, otherwise subsequence matching). The unified `CTRL+SHIFT+P` list stays at `palette_n` (200) recent rows.
 
@@ -507,7 +560,20 @@ CTRL+I → @tf:generate aws_s3_bucket with versioning enabled
 
 Then write it with `#main.tf …` after reviewing the suggestion.
 
-### “What’s the weather?”
+### “What's running locally?”
+
+```
+CTRL+SHIFT+D → @docker:ps
+CTRL+I → @docker:ps what's using 5432?
+```
+
+Or diagnose a crash (select the log first):
+
+```
+CTRL+SHIFT+D → @docker:diagnose
+```
+
+### “What's the weather?”
 
 ```
 CTRL+ALT+W → @weather:zip     # once — e.g. 90210
@@ -525,7 +591,7 @@ CTRL+I → @weather should I bring a jacket tonight?
 ## Safety
 
 - Secrets (API keys, tokens, private keys) are redacted before send / memory  
-- Risky shell commands confirm before send (includes `terraform apply` / `destroy` / `force-unlock`)  
+- Risky shell commands confirm before send (includes `terraform apply` / `destroy` / `force-unlock` and `docker rm` / `compose down`)  
 - `#` / `@@` edits always show a unified diff in the right-hand pane, with Apply/Cancel in a shell split (not a full-window overlay) unless you disable `require_edit_confirm`  
 - Edit backups are timestamped wezai **dotfiles** (`backup.suffix` / `backup.dir` / `backup.dotfile`); set `backup.enabled = false` to skip writing `.bak` files  
 - No force-push action in v1  
@@ -540,9 +606,12 @@ CTRL+I → @weather should I bring a jacket tonight?
 |---------|-----|
 | `no pane cwd` | Focus the **shell** pane, not the wezai pane; then open the palette again |
 | Overlay covers the diff / right pane | Edit confirm should split under the shell. Palette → **Update wezai plugin**. Fallback InputSelector (no python3) still covers the tab. |
+| Composer/confirm is a full-window overlay | Needs `python3` plus `plugin/composer.py` / `confirm.py`. The AI pane prints a warning; overlay still works. |
 | Palette is WezTerm’s, not wezai | Reload config; wezai overrides `CTRL+SHIFT+P`. Or set `keybinding_palette` |
 | Empty `@history` | Run commands in fish/zsh/bash first; check `history.tail_bytes` / `search_n`. Bash often needs `histappend` (or a `history -a` in `PROMPT_COMMAND`) so the current session is on disk. |
+| `@history` says histfile unsupported | PowerShell (and unknown shells) have no histfile search/delete. Scrollback and session events still list. Use fish/zsh/bash for Delete. |
 | No `@tf` in palette | Need wezai ≥ 1.5.0 with `plugin/tf.lua`. Palette → **Update wezai plugin**, then reload. Log should say `tf.lua ok`. Shortcut is `CTRL+ALT+T` (not `CTRL+SHIFT+T`) |
+| No `@docker` in palette | Need `plugin/docker.lua`. Palette → **Update wezai plugin**, then reload. Log should say `docker.lua ok`. Shortcut is `CTRL+SHIFT+D`. |
 | No `@weather` / “No zip set” | Need `plugin/weather.lua`. Set `@weather:zip 90210` or `WEZAI_WEATHER_ZIP=90210` in `wezai.env`. Shortcut is `CTRL+ALT+W` (not `CTRL+SHIFT+W`) |
 | Palette title is `wezai ?` | Stale plugin without `plugin/version.lua`. Palette → **Update wezai plugin**; log should show `wezai v1.12.0…` not `?` |
 | Config error `yield across a C-call boundary` | Load-time process spawn (fixed after 1.12.0). Palette is unavailable — `git fetch` in the WezTerm plugin cache (see README Troubleshooting), then reload |

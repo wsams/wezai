@@ -30,6 +30,8 @@ local BASE = {
     keybinding_tf = { key = "t", mods = "CTRL|ALT" },
     -- CTRL|SHIFT+W is WezTerm's CloseCurrentTab — use CTRL|ALT+W for @weather.
     keybinding_weather = { key = "w", mods = "CTRL|ALT" },
+    -- CTRL|SHIFT+D is unused by WezTerm defaults (not SpawnTab / CloseCurrentTab).
+    keybinding_docker = { key = "d", mods = "CTRL|SHIFT" },
     -- Shell dialect (fish/zsh/bash/…) is appended automatically per request.
     system_prompt = "You are a concise terminal assistant. Provide direct commands or brief explanations. "
         .. "Warn of dangerous commands. Avoid unnecessary verbosity. Prefer interactive commands that "
@@ -97,6 +99,11 @@ local BASE = {
         confirm_mutate = true,
         max_attach_bytes = 80000,
     },
+    docker = {
+        docker = nil, -- absolute path; nil → auto-resolve (GUI PATH is often incomplete)
+        confirm_mutate = true,
+        max_attach_bytes = 80000,
+    },
     weather = {
         zip = nil, -- e.g. "90210"; plugin @weather:zip overrides via ~/.local/share/wezai/weather.json
         country = "US", -- ISO 3166-1 alpha-2 for geocoding
@@ -124,6 +131,7 @@ local NESTED = {
     git = true,
     kube = true,
     tf = true,
+    docker = true,
     weather = true,
     stats = true,
     files = true,
@@ -144,6 +152,7 @@ local ENV_SPEC = {
     { env = "WEZAI_LMS_PATH", key = "lms_path" },
     { env = "WEZAI_KUBE_NS", nested = "kube", key = "namespace" },
     { env = "WEZAI_KUBE_KUBECTL", nested = "kube", key = "kubectl" },
+    { env = "WEZAI_DOCKER_BIN", nested = "docker", key = "docker" },
     { env = "WEZAI_WEATHER_ZIP", nested = "weather", key = "zip" },
     { env = "WEZAI_WEATHER_COUNTRY", nested = "weather", key = "country" },
     { env = "WEZAI_WEATHER_UNITS", nested = "weather", key = "units" },

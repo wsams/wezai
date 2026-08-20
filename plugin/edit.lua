@@ -444,6 +444,12 @@ local function show_diff_then_confirm(window, shell_pane, ai_pane, config, path,
             end,
         })
         if not opened then
+            wezterm.log_warn("wezai: confirm pane unavailable; falling back to overlay selector")
+            ui.ai_print(
+                ai_pane,
+                "Confirm pane needs python3 + plugin/confirm.py — using overlay. See GUIDE.md Troubleshooting.",
+                "warn"
+            )
             open_overlay_fallback()
         end
     end
@@ -509,7 +515,19 @@ function M.confirm_and_apply_many(window, shell_pane, ai_pane, config, changes, 
         for _, c in ipairs(changes) do
             local ok, err, backup, prior = M.apply_file_edit(c.path, c.new_content, config)
             if not ok then
+                local done = #items
+                local remain = #changes - done
                 ui.ai_print(ai_pane, err or ("write failed: " .. tostring(c.path)), "error")
+                ui.ai_print(
+                    ai_pane,
+                    string.format(
+                        "Stopped after saving %d of %d files (%d remaining not written). Palette → Undo last edit restores the files that were saved.",
+                        done,
+                        #changes,
+                        remain
+                    ),
+                    "warn"
+                )
                 if #items > 0 then
                     session.set_last_edit_batch(window, items)
                 end
@@ -565,6 +583,12 @@ function M.confirm_and_apply_many(window, shell_pane, ai_pane, config, changes, 
             end,
         })
         if not opened then
+            wezterm.log_warn("wezai: confirm pane unavailable; falling back to overlay selector")
+            ui.ai_print(
+                ai_pane,
+                "Confirm pane needs python3 + plugin/confirm.py — using overlay. See GUIDE.md Troubleshooting.",
+                "warn"
+            )
             open_overlay_fallback()
         end
     end

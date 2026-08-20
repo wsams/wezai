@@ -19,11 +19,43 @@ local function json_object_schema(fields, required)
     }
 end
 
+-- Ask: message + optional command. Edit also needs file / files or Gemini
+-- will refuse those keys (responseSchema is a closed allow-list).
+local ASK_SCHEMA = json_object_schema({ "message", "command" }, { "message" })
+
+local FILE_ITEM_SCHEMA = {
+    type = "OBJECT",
+    properties = {
+        path = { type = "STRING" },
+        file = { type = "STRING" },
+        content = { type = "STRING" },
+        new_content = { type = "STRING" },
+    },
+}
+
+local EDIT_SCHEMA = {
+    type = "OBJECT",
+    properties = {
+        message = { type = "STRING" },
+        command = { type = "STRING" },
+        file = { type = "STRING" },
+        content = { type = "STRING" },
+        new_content = { type = "STRING" },
+        files = { type = "ARRAY", items = FILE_ITEM_SCHEMA },
+    },
+    required = { "message" },
+}
+
+local function is_edit_prompt(sys)
+    return type(sys) == "string" and sys:find("You create or rewrite one or more files", 1, true) ~= nil
+end
+
 local function endpoint(model, key)
     return string.format("%s/%s:generateContent?key=%s", HOST, model, key)
 end
 
 local function request_body(cfg, user_text)
+    local sys = cfg.system_instruction or cfg.system_prompt
     local body = {
         contents = {
             {
@@ -33,10 +65,9 @@ local function request_body(cfg, user_text)
         },
         generationConfig = {
             responseMimeType = "application/json",
-            responseSchema = json_object_schema({ "message", "command" }, { "message" }),
+            responseSchema = is_edit_prompt(sys) and EDIT_SCHEMA or ASK_SCHEMA,
         },
     }
-    local sys = cfg.system_instruction or cfg.system_prompt
     if type(sys) == "string" and sys ~= "" then
         body.systemInstruction = { parts = { { text = sys } } }
     end

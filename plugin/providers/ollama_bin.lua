@@ -37,8 +37,10 @@ function B.ask(cfg, user_text)
 end
 
 function B.ready(cfg)
-    if type(cfg.ollama_path) ~= "string" or cfg.ollama_path == "" then
-        wezterm.log_error("wezai/ollama: set ollama_path to the ollama binary")
+    -- ask() uses PATH "ollama" when ollama_path is unset — same default here
+    -- so apply_to_config still binds keys.
+    if not select(1, proc.require_nonempty(cfg, "model")) then
+        wezterm.log_error("wezai/ollama: model required")
         return false
     end
     return true

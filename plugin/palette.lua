@@ -37,6 +37,22 @@ do
     end
 end
 
+local docker
+do
+    local ok, mod = pcall(require, "docker")
+    if ok then
+        docker = mod
+    else
+        wezterm.log_warn("wezai: palette @docker disabled — " .. tostring(mod))
+        docker = {
+            list_actions = function()
+                return {}
+            end,
+            run_action = function() end,
+        }
+    end
+end
+
 local M = {}
 
 -- Set by init.lua: functions(win, pane, config)
@@ -55,7 +71,7 @@ local function add(choices, handlers, id, label, fn)
     handlers[id] = fn
 end
 
--- scope: nil (all) | "git" | "kube" | "tf" | "weather" | "history" | "history:…"
+-- scope: nil (all) | "git" | "kube" | "tf" | "weather" | "docker" | "history" | "history:…"
 function M.show(window, pane, config, opts)
     opts = opts or {}
     local scope = opts.scope
@@ -72,6 +88,7 @@ function M.show(window, pane, config, opts)
         local include_kube = (scope == nil or scope == "kube")
         local include_tf = (scope == nil or scope == "tf")
         local include_weather = (scope == nil or scope == "weather")
+        local include_docker = (scope == nil or scope == "docker")
         local hist_filter = nil
         if scope == "history" then
             hist_filter = "all"
@@ -204,12 +221,44 @@ function M.show(window, pane, config, opts)
             end
         end
 
+        if include_docker then
+            for _, a in ipairs(docker.list_actions()) do
+                local kind = a.kind == "ai" and "ai" or (a.kind == "show" and "show" or "run")
+                local label = "@docker:" .. a.id .. "  [" .. kind .. "]  " .. a.label
+                local action_id = a.id
+                add(choices, handlers, "docker:" .. action_id, label, function(win, p, cfg)
+                    docker.run_action(win, p, cfg, action_id, nil)
+                end)
+            end
+        end
+
         local hist_scoped = scope and tostring(scope):find("^history") ~= nil
         if hist_filter then
             if hist_scoped then
                 add(choices, handlers, "hist:search", "@history  Search entire history…", function(win, p, cfg)
                     history.prompt_search(win, p, cfg)
                 end)
+                local kind = history.detect_kind(pane)
+                if not history.histfile_kind_supported(kind) then
+                    add(
+                        choices,
+                        handlers,
+                        "hist:unsupported",
+                        "@history  "
+                            .. kind
+                            .. " — histfile search/delete not supported (fish/zsh/bash only)",
+                        function(win, p, cfg)
+                            local ai = ui.ensure_ai_pane(win, p, cfg)
+                            ui.ai_print(
+                                ai,
+                                "wezai @history indexes fish/zsh/bash histfiles. Detected shell is "
+                                    .. kind
+                                    .. ". Scrollback and session events still appear below. See GUIDE.md Troubleshooting.",
+                                "warn"
+                            )
+                        end
+                    )
+                end
             end
             local cap = hist_cap(config, hist_scoped)
             local cok, entries_or_err = pcall(history.collect_entries, window, pane, config, hist_filter, {
@@ -250,11 +299,17 @@ function M.show(window, pane, config, opts)
             title = brand .. " · @tf  (type to filter)"
         elseif scope == "weather" then
             title = brand .. " · @weather  (type to filter)"
+        elseif scope == "docker" then
+            title = brand .. " · @docker  (type to filter)"
         elseif scope and tostring(scope):find("^history") then
             local kind = history.detect_kind(pane)
-            title = brand .. " · @history · " .. kind .. "  (type to filter)"
+            if history.histfile_kind_supported(kind) then
+                title = brand .. " · @history · " .. kind .. "  (type to filter)"
+            else
+                title = brand .. " · @history · " .. kind .. "  (histfile unsupported)"
+            end
         else
-            title = brand .. " · type @git / @kube / @tf / @weather / @history / Ask…"
+            title = brand .. " · type @git / @kube / @tf / @docker / @weather / @history / Ask…"
         end
 
         -- Open selector on the current pane (do not create AI pane first — that steals focus)

@@ -133,6 +133,11 @@ function M.detect_kind(pane)
     return shell.detect_shell(pane)
 end
 
+--- Fish / zsh / bash histfiles only. PowerShell and others fall back to scrollback.
+function M.histfile_kind_supported(kind)
+    return kind == "fish" or kind == "zsh" or kind == "bash"
+end
+
 local function pane_pid(pane)
     if not pane then
         return nil
@@ -889,26 +894,14 @@ function M.delete_command(window, pane, config, cmd)
 
     if kind ~= "fish" and kind ~= "zsh" and kind ~= "bash" then
         os.remove(del_path)
-        local removed_any = 0
-        for _, k in ipairs({ "fish", "zsh", "bash" }) do
-            local path = first_existing(histfile_paths(k, penv))
-            if path then
-                local ok, removed = lua_rewrite_histfile(k, path, cmd)
-                if ok and removed and removed > 0 then
-                    removed_any = removed_any + removed
-                end
-            end
-        end
-        if removed_any < 1 then
-            return false, "command not found in history files (shell=" .. tostring(kind) .. ")"
-        end
         ui.ai_print(
             ai_pane,
-            "Removed from history file(s). Reload the shell to drop the in-memory copy: "
-                .. shorten(cmd, 80),
-            "success"
+            "History delete is not supported for "
+                .. tostring(kind)
+                .. " (fish/zsh/bash histfiles only). See GUIDE.md Troubleshooting.",
+            "error"
         )
-        return true, nil
+        return false, "unsupported shell"
     end
 
     if kind == "fish" then
@@ -1171,7 +1164,11 @@ function M.show_actions(window, pane, config, entry)
     table.insert(choices, { id = "explain", label = "Explain — ask AI about this" })
     table.insert(choices, { id = "attach", label = "Attach & ask — use as context in a new prompt" })
     table.insert(choices, { id = "copy", label = "Copy — clipboard" })
-    if entry.kind ~= "edit" and entry.text and trim(entry.text) ~= "" then
+    if entry.kind ~= "edit"
+        and entry.text
+        and trim(entry.text) ~= ""
+        and M.histfile_kind_supported(kind)
+    then
         table.insert(choices, {
             id = "delete",
             label = "Delete — remove from " .. kind .. " history (all copies)",
