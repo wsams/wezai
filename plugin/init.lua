@@ -23,6 +23,7 @@ do
         "history.lua",
         "files.lua",
         "composer.lua",
+        "confirm.lua",
         "version.lua",
     }
 
@@ -237,6 +238,7 @@ end
 local palette = require("palette")
 local files = require("files")
 local composer = require("composer")
+local confirm = require("confirm")
 local providers = require("providers")
 local settings = require("settings")
 local stats = require("stats")
@@ -783,10 +785,18 @@ local function prompt_for_ai(window, pane, config, opts)
 
         local pick = files.parse_pick_line(line)
         if pick then
+            local pick_rest = pick.rest or ""
+            local pick_prefix = nil
+            local first = pick_rest:match("^(%S+)")
+            if first and files.query_is_outside(first) then
+                pick_prefix = first
+                pick_rest = (pick_rest:sub(#first + 1):match("^%s*(.-)%s*$")) or ""
+            end
             files.show_picker(win, p, config, {
                 mode = pick.mode,
+                prefix = pick_prefix,
                 on_chosen = function(w2, p2, rel)
-                    local rest = pick.rest or ""
+                    local rest = pick_rest or ""
                     local rebuilt
                     if pick.mode == "edit" then
                         rebuilt = "#" .. rel .. (rest ~= "" and (" " .. rest) or "")
@@ -1157,6 +1167,7 @@ local function apply_to_config(wezterm_config, user_config)
     local config = settings.finalize(user_config)
     settings.maybe_extend_rocks_path(config)
     composer.ensure_hook()
+    confirm.ensure_hook()
     if config._env_file then
         wezterm.log_info("wezai: env file " .. tostring(config._env_file))
     end

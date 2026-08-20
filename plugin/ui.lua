@@ -150,7 +150,19 @@ local function process_looks_like_composer(pane)
             chunks[#chunks + 1] = tostring(info.executable)
         end
         local blob = table.concat(chunks, " ")
-        if blob:find("WEZAI_COMPOSER_PANE", 1, true) or blob:find("composer.py", 1, true) then
+        if blob:find("WEZAI_COMPOSER_PANE", 1, true)
+            or blob:find("WEZAI_CONFIRM_PANE", 1, true)
+            or blob:find("composer.py", 1, true)
+            or blob:find("confirm.py", 1, true)
+        then
+            return true
+        end
+    end
+    local ok_name, name = pcall(function()
+        return pane:get_foreground_process_name()
+    end)
+    if ok_name and type(name) == "string" then
+        if name:find("composer.py", 1, true) or name:find("confirm.py", 1, true) then
             return true
         end
     end
@@ -914,6 +926,22 @@ function M.input_select(window, pane, title, choices, callback, opts)
 end
 
 function M.confirm(window, pane, title, yes_id, callback)
+    local ok_mod, confirm = pcall(require, "confirm")
+    if ok_mod and confirm and confirm.open then
+        local opened = confirm.open(window, pane, nil, {
+            title = title,
+            hint = "The wezai pane on the right stays visible.",
+            apply_label = "Yes — continue",
+            cancel_label = "No — cancel",
+            on_done = function(applied)
+                local sp = M.shell_pane_for(window, pane)
+                callback(window, sp, applied)
+            end,
+        })
+        if opened then
+            return
+        end
+    end
     M.input_select(window, pane, title, {
         { id = yes_id or "yes", label = "Yes — continue" },
         { id = "no", label = "No — cancel" },

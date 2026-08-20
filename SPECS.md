@@ -17,7 +17,7 @@ User-facing walkthroughs: [GUIDE.md](GUIDE.md). Install / config sketch: [README
 **wezai** is a WezTerm plugin that puts an AI assistant and utility catalogs next to the user’s shell:
 
 - **Ask** — natural-language CLI help with attachable context (`@file`, `@dir/`, selection, git, kube, tf, weather, history). CTRL+I opens a **composer pane** under the shell so the right-hand AI log stays visible; drafts persist if you Esc.
-- **Edit** — create/rewrite via `#path` (legacy `@@path`) with unified diff + confirm. `#dir/` pins a tree of editable files.
+- **Edit** — create/rewrite via `#path` (legacy `@@path`) with unified diff + confirm in a **shell split** (right-hand AI pane stays visible). `#dir/` pins a tree of editable files.
 - **Palette** — fuzzy `InputSelector` (`CTRL+SHIFT+P`) for Ask helpers, `@git`, `@kube`, `@tf`, `@weather`, `@history`, Compact, Clear, plugin update.
 - **AI output pane** — right-side keep-alive pane for answers, diffs, git/kube/tf/weather show output (not for running shell/git).
 
@@ -66,9 +66,11 @@ plugin/
   shell.lua         -- shell detect, OS platform hint, risk gate, clipboard, send_command
   context.lua       -- @ / # parsing (@@ alias), dir walk, token budget, redaction
   edit.lua          -- wezai dotfile backups, unified diff, apply/undo
-  files.lua         -- fuzzy file+dir list (fd → git ls-files → find) + @pick / #pick
+  files.lua         -- fuzzy file+dir list (fd → git ls-files → find) + @pick / #pick; ~/ /abs ../
   composer.lua      -- CTRL+I split composer (does not cover the AI pane)
-  composer.py       -- readline-less TUI: live @/# fuzzy paths, draft, OSC user vars
+  composer.py       -- readline-less TUI: live @/# fuzzy paths (cwd + ~/ / ../), draft, OSC user vars
+  confirm.lua       -- Apply/Cancel split of the shell pane (AI pane stays visible)
+  confirm.py        -- readline-less TUI: a/c Apply/Cancel via OSC user var
   history.lua       -- fish/zsh/bash history + scrollback + session events
   git.lua           -- @git action catalog
   kube.lua          -- @kube action catalog
@@ -158,7 +160,7 @@ Command labels print as `(fish/macos)` style when showing suggested commands.
 
 - `context.redact` strips common secrets (keys, tokens, JWTs, private keys) before prompts/history.
 - `shell.is_risky` + confirm before sending dangerous commands (includes kubectl mutate/exec patterns, terraform apply/destroy/import/state-rm/force-unlock, and git force/push/reset/etc.).
-- Edit apply and kube/tf mutate actions confirm unless config disables confirms. Edit confirm embeds the unified diff in the overlay (WezTerm InputSelector covers the tab).
+- Edit apply and kube/tf mutate actions confirm unless config disables confirms. Edit (and other Yes/No) confirms use a **split of the shell pane** so the right-hand AI pane stays visible — that is where the unified diff is printed. WezTerm InputSelector is only the fallback when python3/`confirm.py` is missing (it covers the tab, so that fallback still embeds a diff preview in the selector).
 - Edit backups are timestamped **dotfiles** with `wezai` in the name (`backup.enabled` / `backup.dir` / `backup.suffix` / `backup.dotfile`). Default: `.notes.txt.<YYYYMMDD-HHMMSS>.wezai.bak` next to the target. Undo uses the bak file or in-memory prior content. Directory walks skip `*wezai*.bak`.
 - Kube AI helpers must prefer **read-only** next steps (get/describe/logs); never bake org-specific cluster/namespace names into the catalog.
 - Terraform AI helpers must prefer **read-only** next steps (validate/fmt/plan/state list) and `#` file edits; never bake account/org-specific names into the catalog.
@@ -199,13 +201,13 @@ Supports:
 | `compact` / `/compact` | Compact conversation + sticky selection; keep `@`/`#` pins |
 | `clear` / `/clear` | Wipe turns, selections, drafts, and file pins |
 
-**Composer autocomplete:** typing `@` or `#` lists files and directories under the shell cwd (prefix then fuzzy). Tab inserts the highlighted path; Enter accepts an incomplete match, or sends the line when the token is already exact / the cursor is outside a ref. `@git:` / `@kube:` / `@tf:` / `@history` are reserved and do not open the file list.
+**Composer autocomplete:** typing `@` or `#` lists files and directories under the shell cwd (prefix then fuzzy). Paths that start with `~/`, `/` (absolute), `./`, or `../` live-list that location instead of the cwd. Tab inserts the highlighted path; Enter accepts an incomplete match, or sends the line when the token is already exact / the cursor is outside a ref. `@git:` / `@kube:` / `@tf:` / `@history` are reserved and do not open the file list.
 
 **Path parsing:** unquoted `@`/`#` refs strip trailing sentence punctuation (`?!. ,;:)` …) so `@package.json?` works. Quoted paths are literal. `#` is only a ref at token start when the next character is path-like (not `# heading` with a space).
 
 **New files:** `#newfile.txt …` creates if parent dir exists (`is_new`, empty original, Create confirm).
 
-**Edit confirm:** WezTerm `InputSelector` covers the tab, so the unified diff is embedded in the selector choices (Apply / Cancel first; colored diff preview below). The full diff is also printed in the AI pane. Selecting a preview row re-opens the selector. Multi-file `#dir/` edits print every diff in the AI pane and use one Apply-all confirm.
+**Edit confirm:** a **confirm pane** splits under the shell (same idea as the Ask composer) so the right-hand AI pane stays visible. The unified diff is printed there; the confirm pane is Apply / Cancel (`a` / `c`, arrows, Enter, Esc). Multi-file `#dir/` edits print every diff in the AI pane and use one Apply-all confirm. If python3/`confirm.py` is missing, WezTerm `InputSelector` is the fallback (covers the tab; diff preview is embedded in the selector).
 
 **Backups:** On Apply, write a timestamped **dotfile** unless `backup.enabled = false`. Default name: `.file.<YYYYMMDD-HHMMSS>.wezai.bak` next to the target (`backup.dotfile = true`), or under `backup.dir` when set. Undo restores the last apply (all files in a multi-edit batch).
 
@@ -441,7 +443,7 @@ For `http` + Ollama: pick an **instruct** model that obeys §4.4; set a high `ti
 
 ## 9. Bootstrap / module path
 
-WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scanning `wezterm.plugin.list()` for fingerprint files (`settings.lua`, `stats.lua`, `providers/init.lua`, `palette.lua`). Each listed `plugin_dir` is tried as **clone-root/`plugin/`** and as **the Lua dir itself** (Flatpak/Bazzite sometimes report the latter). Among matches it **prefers the most complete install** (counts `git.lua` / `kube.lua` / `tf.lua` / `weather.lua` / `version.lua` / `composer.lua` / …) so a stale local checkout cannot shadow an updated GitHub cache that has newer catalogs. Local/`wsams` paths win only as a tie-breaker. Then extends `package.path` for `?.lua` and `?/init.lua`, and passes `plugin_dir` + repo root into `util.set_install_dirs` so `util.version_label()` can `require("version")` and walk up for `package.json` / git HEAD. `@tf` and `@weather` are soft-required — a missing `tf.lua` / `weather.lua` logs a warning and disables that catalog instead of failing the whole plugin.
+WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scanning `wezterm.plugin.list()` for fingerprint files (`settings.lua`, `stats.lua`, `providers/init.lua`, `palette.lua`). Each listed `plugin_dir` is tried as **clone-root/`plugin/`** and as **the Lua dir itself** (Flatpak/Bazzite sometimes report the latter). Among matches it **prefers the most complete install** (counts `git.lua` / `kube.lua` / `tf.lua` / `weather.lua` / `version.lua` / `composer.lua` / `confirm.lua` / …) so a stale local checkout cannot shadow an updated GitHub cache that has newer catalogs. Local/`wsams` paths win only as a tie-breaker. Then extends `package.path` for `?.lua` and `?/init.lua`, and passes `plugin_dir` + repo root into `util.set_install_dirs` so `util.version_label()` can `require("version")` and walk up for `package.json` / git HEAD. `@tf` and `@weather` are soft-required — a missing `tf.lua` / `weather.lua` logs a warning and disables that catalog instead of failing the whole plugin.
 
 ---
 
@@ -483,10 +485,10 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] `#notes.txt sort lines` (and legacy `@@notes.txt`) shows diff confirm.
 - [ ] `#newfile.txt create lorem` creates file after Apply/Create.
 - [ ] CTRL+I composer splits the **shell** pane (AI log on the right stays visible); Esc restores a draft.
-- [ ] Typing `@` / `#` in the composer lists cwd files/dirs; Tab completes.
+- [ ] Typing `@` / `#` in the composer lists cwd files/dirs; `@~/…`, `@/abs`, `@../` list those trees; Tab completes.
 - [ ] Compact keeps `@`/`#` pins and drops conversation / sticky selection.
 - [ ] Clear drops pins and chat.
-- [ ] `@pick` / palette Attach file opens fuzzy selector.
+- [ ] `@pick` / palette Attach file opens fuzzy selector (includes `~/` `/` `../` browse rows).
 - [ ] Large `@file` attaches as truncated head+tail, not hard error.
 - [ ] Pick model / palette actions reuse **one** AI pane (no second split).
 - [ ] Palette title and AI pane banner show install version (`wezai v…` / sha), never `wezai ?` when `plugin/version.lua` is present. Config load must not error with `yield across a C-call boundary`.
@@ -507,7 +509,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] Local Ollama HTTP: with an unloaded large model, `timeout` ≥ load+warmup still returns JSON (not curl 28 / 0 bytes); second Ask is fast while model stays loaded.
 - [ ] During a multi-minute Ask wait, AI pane scrolls progress with model/endpoint, elapsed vs timeout %, and rotating hints (not only a bare “thinking…” line).
 - [ ] Chatty model wrapping JSON in prose still parses via `extract_json_object` when a single object is present.
-- [ ] `#` / `@@` edit accepting `content` alias when `file` is missing still shows diff confirm (diff visible inside the overlay).
+- [ ] `#` / `@@` edit accepting `content` alias when `file` is missing still shows diff confirm (diff visible in the right pane; confirm split does not cover it).
 - [ ] Apply writes `.file.<YYYYMMDD-HHMMSS>.wezai.bak`; `backup.enabled = false` skips bak and Undo still works; `backup.dir` relocates bak files; `backup.dotfile = false` drops the leading dot.
 ---
 
@@ -530,6 +532,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 | Defaults / merge | `plugin/settings.lua` |
 | `@` / `#` parsing / prepare / attach errors | `plugin/context.lua` |
 | CTRL+I composer (AI pane stays visible) | `plugin/composer.lua`, `plugin/composer.py` |
+| Apply/Cancel confirm (AI pane stays visible) | `plugin/confirm.lua`, `plugin/confirm.py` |
 | `run_cmd` / `resolve_executable` | `plugin/util.lua` |
 | Pane / UI | `plugin/ui.lua` |
 | Install version label | `plugin/version.lua`, `plugin/util.lua` (`version_label` / `brand_with_version` / `sync_plugin_git`) |

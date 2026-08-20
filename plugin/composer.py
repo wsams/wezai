@@ -12,11 +12,13 @@ import base64
 import os
 import select
 import shutil
+import subprocess
 import sys
+import tempfile
 import termios
 import time
 import tty
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 SYNTHETICS = [
     "git:",
@@ -52,6 +54,30 @@ BLUE = "\033[34m"
 REVERSE = "\033[7m"
 
 MAX_DROP = 12
+
+SKIP_DIR = {
+    ".git",
+    "node_modules",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".tox",
+    "dist",
+    "build",
+    ".next",
+    "target",
+    ".wezai",
+}
+SKIP_FILE = {
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "Cargo.lock",
+    ".DS_Store",
+}
+KEEP_DOT_DIRS = {".github", ".config"}
+OUTSIDE_LIST_LIMIT = 400
+_OUTSIDE_CACHE: Dict[tuple, list] = {}
 
 
 def emit_user_var(name: str, value: str) -> None:
@@ -95,6 +121,220 @@ def load_candidates(path: Optional[str]) -> List[Tuple[str, str]]:
             out.append((kind, shown))
     except OSError:
         pass
+    return out
+
+
+def should_skip_rel(rel: str) -> bool:
+    if not rel or rel in (".", ".."):
+        return True
+    base = os.path.basename(rel.rstrip("/"))
+    if base in SKIP_FILE:
+        return True
+    if "wezai" in base and base.endswith(".bak"):
+        return True
+    for part in rel.replace("\\", "/").split("/"):
+        if not part or part in (".", ".."):
+            continue
+        if part in SKIP_DIR:
+            return True
+        if part.startswith(".") and part not in KEEP_DOT_DIRS:
+            return True
+    return False
+
+
+def query_is_outside(query: str) -> bool:
+    if not query:
+        return False
+    if query[0] in "~/" or query.startswith("\\"):
+        return True
+    if query in (".", "..") or query.startswith("./") or query.startswith("../"):
+        return True
+    if query.startswith(".\\") or query.startswith("..\\"):
+        return True
+    if len(query) >= 2 and query[1] == ":" and query[0].isalpha():
+        return True
+    return False
+
+
+def expand_user_path(path: str, cwd: str) -> str:
+    home = os.path.expanduser("~")
+    if path == "~":
+        return home
+    if path.startswith("~/") or path.startswith("~\\"):
+        return home + path[1:]
+    if os.path.isabs(path):
+        return os.path.normpath(path)
+    return os.path.normpath(os.path.join(cwd or ".", path))
+
+
+def _posix(path: str) -> str:
+    return path.replace("\\", "/")
+
+
+def display_outside_path(abs_path: str, query: str, cwd: str) -> str:
+    abs_path = os.path.normpath(abs_path)
+    home = os.path.expanduser("~")
+    if query.startswith("~"):
+        home_n = os.path.normpath(home)
+        if abs_path == home_n:
+            return "~/"
+        if abs_path.startswith(home_n + os.sep):
+            return "~/" + _posix(abs_path[len(home_n) + 1 :])
+    if query.startswith("/") or (len(query) >= 2 and query[1] == ":"):
+        return _posix(abs_path)
+    rel = os.path.relpath(abs_path, cwd or os.getcwd())
+    rel = _posix(rel)
+    if query.startswith("./") and not rel.startswith("."):
+        return "./" + rel
+    return rel
+
+
+def max_depth_for(root: str, empty_filter: bool) -> int:
+    if empty_filter:
+        return 1
+    n = os.path.normpath(root)
+    if n in ("/", os.sep) or (len(n) == 2 and n[1] == ":"):
+        return 1
+    if os.path.normpath(n) == os.path.normpath(os.path.expanduser("~")):
+        return 3
+    return 4
+
+
+def split_outside_query(query: str, cwd: str) -> Tuple[str, str]:
+    """Return (search_root, filter_text) for a ~/ /abs ../ query."""
+    trailing = query.endswith("/") or query.endswith("\\")
+    trimmed = query
+    if trailing and query not in ("/", "\\") and not (len(query) == 3 and query[1] == ":"):
+        trimmed = query.rstrip("/\\")
+    expanded = expand_user_path(trimmed, cwd)
+    treat_dir = trailing or query in ("~", "..", ".", "~/", "../", "./")
+    if treat_dir and os.path.isdir(expanded):
+        return expanded, ""
+    if os.path.isdir(expanded):
+        return expanded, ""
+    parent, filt = os.path.dirname(expanded), os.path.basename(expanded)
+    while parent and not os.path.isdir(parent):
+        name = os.path.basename(parent)
+        filt = f"{name}/{filt}" if filt else name
+        nxt = os.path.dirname(parent)
+        if nxt == parent:
+            break
+        parent = nxt
+    if os.path.isdir(parent):
+        return parent, filt
+    return cwd, query
+
+
+def _collect_os_walk(root: str, limit: int, max_depth: int) -> List[Tuple[str, str]]:
+    out: List[Tuple[str, str]] = []
+    root = os.path.normpath(root)
+    try:
+        for dirpath, dirnames, filenames in os.walk(root):
+            rel_dir = os.path.relpath(dirpath, root)
+            depth = 0 if rel_dir in (".", "") else rel_dir.count(os.sep) + 1
+            if depth >= max_depth:
+                dirnames[:] = []
+            keep_dirs = []
+            for name in dirnames:
+                rel = name if rel_dir in (".", "") else os.path.join(rel_dir, name)
+                rel_p = _posix(rel)
+                if should_skip_rel(rel_p):
+                    continue
+                keep_dirs.append(name)
+                if depth + 1 <= max_depth:
+                    out.append(("D", os.path.join(dirpath, name)))
+                    if len(out) >= limit:
+                        return out
+            dirnames[:] = keep_dirs
+            if depth >= max_depth:
+                continue
+            for name in filenames:
+                rel = name if rel_dir in (".", "") else os.path.join(rel_dir, name)
+                rel_p = _posix(rel)
+                if should_skip_rel(rel_p):
+                    continue
+                out.append(("F", os.path.join(dirpath, name)))
+                if len(out) >= limit:
+                    return out
+    except OSError:
+        pass
+    return out
+
+
+def _collect_fd(root: str, limit: int, max_depth: int) -> Optional[List[Tuple[str, str]]]:
+    fd = shutil.which("fd") or shutil.which("fdfind")
+    if not fd:
+        return None
+    args = [
+        fd,
+        "--hidden",
+        "--exclude",
+        ".git",
+        "--exclude",
+        "node_modules",
+        "--exclude",
+        "*.wezai.bak",
+        "--type",
+        "f",
+        "--type",
+        "d",
+        "--max-depth",
+        str(max_depth),
+        "--max-results",
+        str(limit),
+        ".",
+        root,
+    ]
+    try:
+        proc = subprocess.run(args, capture_output=True, text=True, check=False)
+    except OSError:
+        return None
+    if proc.returncode not in (0, 1) or not proc.stdout:
+        return None
+    out: List[Tuple[str, str]] = []
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        abs_path = line if os.path.isabs(line) else os.path.join(root, line)
+        rel = os.path.relpath(abs_path, root)
+        if should_skip_rel(_posix(rel)):
+            continue
+        kind = "D" if os.path.isdir(abs_path) else "F"
+        out.append((kind, abs_path))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def list_under(root: str, limit: int, max_depth: int) -> List[Tuple[str, str]]:
+    key = (root, limit, max_depth)
+    hit = _OUTSIDE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    listed = _collect_fd(root, limit, max_depth) or _collect_os_walk(root, limit, max_depth)
+    _OUTSIDE_CACHE[key] = listed
+    return listed
+
+
+def list_outside_query(query: str, cwd: str, limit: int) -> List[Tuple[str, str]]:
+    root, filt = split_outside_query(query, cwd)
+    if not root or not os.path.isdir(root):
+        return []
+    empty = not filt
+    depth = max_depth_for(root, empty)
+    listed = list_under(root, limit, depth)
+    out: List[Tuple[str, str]] = []
+    if query in ("~", "..", ".") or query.rstrip("/\\") in ("~", "..", "."):
+        shown = display_outside_path(root, query, cwd)
+        if not shown.endswith("/"):
+            shown = shown + "/"
+        out.append(("D", shown))
+    for kind, abs_path in listed:
+        shown = display_outside_path(abs_path, query, cwd)
+        if kind == "D" and not shown.endswith("/"):
+            shown = shown + "/"
+        out.append((kind, shown))
     return out
 
 
@@ -148,15 +388,23 @@ def is_reserved_path(pathpart: str) -> bool:
 
 
 def filter_matches(
-    query: str, candidates: List[Tuple[str, str]], op: str, limit: int
+    query: str,
+    candidates: List[Tuple[str, str]],
+    op: str,
+    limit: int,
+    cwd: Optional[str] = None,
 ) -> List[Tuple[str, str, int]]:
     scored: List[Tuple[str, str, int]] = []
-    if op == "@" and query:
+    outside = query_is_outside(query)
+    if op == "@" and query and not outside:
         q = query.lower()
         for syn in SYNTHETICS:
             if syn.lower().startswith(q) or q in syn.lower():
                 scored.append(("S", syn, 3000))
-    for kind, rel in candidates:
+    pool: List[Tuple[str, str]] = candidates
+    if outside and cwd:
+        pool = list_outside_query(query, cwd, max(limit * 4, 80))
+    for kind, rel in pool:
         s = score(query, rel)
         if s > 0:
             scored.append((kind, rel, s))
@@ -242,7 +490,7 @@ def render(
     cols, rows = term_size()
     line = "".join(buf)
     sys.stdout.write("\033[H\033[2J")
-    header = f"{BOLD}{CYAN}wezai ask{RESET}  {DIM}@ attach   # edit   Tab complete   Enter send   Esc save draft{RESET}"
+    header = f"{BOLD}{CYAN}wezai ask{RESET}  {DIM}@ attach  # edit  Tab complete  ~/ / ../ ok  Enter send  Esc draft{RESET}"
     sys.stdout.write(header[: cols + 32] + "\r\n")
     if hint:
         sys.stdout.write(f"{MAGENTA}session {RESET}{hint[: cols - 10]}\r\n")
@@ -267,7 +515,7 @@ def render(
             else:
                 sys.stdout.write(f"  {color} {shown}{RESET}  {DIM}{tag}{RESET}\r\n")
     elif op:
-        sys.stdout.write(f"{DIM}  no matches{RESET}\r\n")
+        sys.stdout.write(f"{DIM}  no matches — cwd, ~/ , /abs, ../ are searchable{RESET}\r\n")
 
     # Prompt is row 5; `› ` is two cells.
     sys.stdout.write(f"\033[5;{3 + cursor}H")
@@ -321,7 +569,9 @@ def run() -> int:
             if ref:
                 op, query, token_start = ref
                 if not is_reserved_path(query):
-                    matches = filter_matches(query, candidates, "@" if op == "@" else "#", MAX_DROP * 2)
+                    matches = filter_matches(
+                        query, candidates, "@" if op == "@" else "#", MAX_DROP * 2, cwd
+                    )
                     show_drop = True
                     if sel >= len(matches):
                         sel = max(0, len(matches) - 1)
@@ -444,6 +694,41 @@ def _self_test() -> int:
     # cursor in the # token
     ref2 = current_ref(list("#plugin/i"), 9)
     assert ref2 and ref2[0] == "#"
+
+    assert query_is_outside("~/Documents")
+    assert query_is_outside("/etc/hosts")
+    assert query_is_outside("../other")
+    assert query_is_outside("./plugin")
+    assert not query_is_outside("plugin/init.lua")
+    assert not query_is_outside("git:status")
+
+    home = os.path.expanduser("~")
+    shown = display_outside_path(os.path.join(home, "Documents"), "~/", os.getcwd())
+    assert shown.startswith("~/"), shown
+    shown_abs = display_outside_path("/etc/hosts", "/etc/h", os.getcwd())
+    assert shown_abs == "/etc/hosts", shown_abs
+
+    with tempfile.TemporaryDirectory() as tmp:
+        nested = os.path.join(tmp, "proj", "src")
+        os.makedirs(nested)
+        open(os.path.join(nested, "main.py"), "w", encoding="utf-8").write("x\n")
+        open(os.path.join(tmp, "proj", "README.md"), "w", encoding="utf-8").write("hi\n")
+        sibling = os.path.join(tmp, "other")
+        os.makedirs(sibling)
+        open(os.path.join(sibling, "notes.txt"), "w", encoding="utf-8").write("n\n")
+        cwd = os.path.join(tmp, "proj")
+        _OUTSIDE_CACHE.clear()
+        parent_hits = list_outside_query("../", cwd, 50)
+        names = [rel for _, rel in parent_hits]
+        assert any("other" in rel or rel.endswith("other/") for rel in names), names
+        rel_hits = filter_matches("../other", cands, "@", 20, cwd)
+        assert any("notes" in rel or "other" in rel for _, rel, _ in rel_hits), rel_hits
+        abs_hits = filter_matches(sibling + "/no", cands, "@", 20, cwd)
+        assert any("notes.txt" in rel for _, rel, _ in abs_hits), abs_hits
+        root, filt = split_outside_query("../other/no", cwd)
+        assert os.path.normpath(root) == os.path.normpath(sibling), (root, filt)
+        assert filt.startswith("no"), filt
+
     print("composer self-test ok")
     return 0
 

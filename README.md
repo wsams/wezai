@@ -6,7 +6,7 @@
 
 - Ask questions with file, directory, clipboard, git, kube, terraform, weather, and selection context  
 - Edit files in one pass (`#path`, legacy `@@path`) with a unified diff confirm and wezai dotfile backups  
-- CTRL+I composer keeps the AI log visible; `@` / `#` fuzzy-complete paths; context persists until Compact/Clear  
+- CTRL+I composer keeps the AI log visible; `@` / `#` fuzzy-complete cwd paths plus `~/`, `/abs`, `../`; context persists until Compact/Clear  
 - One palette (`CTRL+SHIFT+P`) for Ask helpers, `@git:…`, `@kube:…`, `@tf:…`, `@weather:…`, and `@history`  
 
 - Shell-aware suggestions, secret redaction, risky-command confirms  
@@ -92,7 +92,7 @@ More examples: [GUIDE.md](GUIDE.md).
 |-------------------|---------|
 | `@file` | Attach a file (read-only, **pinned** until Clear). Trailing `?!.` etc. are ignored (`@package.json?` works) |
 | `@dir/` | Walk the directory and attach files (token budget + confirm if large) |
-| `@` / `@pick` | Fuzzy file picker (type to filter), then ask |
+| `@` / `@pick` | Fuzzy file picker (cwd, or type `~/` `/` `../`), then ask |
 | `#file instruction` | Create or rewrite the file (diff + confirm). New files OK if the parent dir exists |
 | `#dir/` | Pin files in that directory as edit targets |
 | `#` / `#pick` | Fuzzy pick a file to edit, then type the instruction |
@@ -212,7 +212,8 @@ plugin/
   context.lua    -- @ / # parsing + dir walk + token budget
   edit.lua       -- wezai dotfile backups, diffs, apply confirm
   composer.lua / composer.py  -- CTRL+I ask pane (AI log stays visible)
-  files.lua      -- fuzzy @pick / #pick
+  confirm.lua / confirm.py    -- Apply/Cancel split (AI log stays visible)
+  files.lua      -- fuzzy @pick / #pick (cwd, ~/ , / , ../)
   shell.lua      -- dialect, risk gate, clipboard
   util.lua
   settings.lua   -- defaults + wezai.env / process env / user merge
