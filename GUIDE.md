@@ -27,7 +27,7 @@ You do **not** need `CTRL+I` before the palette. From the shell: `CTRL+SHIFT+P` 
 
 ## Ask (`CTRL+I`)
 
-CTRL+I splits a **composer** under your shell. The right-hand wezai pane stays visible so you can copy from the last answer. Esc saves a draft; the next CTRL+I restores it. Type `@` or `#` to fuzzy-complete files and directories in the cwd.
+CTRL+I splits a **composer** under your shell. The right-hand wezai pane stays visible so you can copy from the last answer. Esc saves a draft; the next CTRL+I restores it. Type `@` or `#` to fuzzy-complete files and directories in the cwd — or start a path with `~/`, `/`, `./`, or `../` to list outside the cwd.
 
 Pinned `@` / `#` files stay in context for follow-up questions until you **Clear**. **Compact** (palette, or type `compact`) shrinks the conversation and sticky selections but keeps those file refs.
 
@@ -69,7 +69,7 @@ how does module loading work?
 
 `@directory/` walks the tree (skips `node_modules`, `.git`, wezai backups) and attaches source-like files up to the token budget. Huge packs ask for confirmation.
 
-Paths are relative to the pane cwd unless absolute or `~/…`. File pins last until Clear.
+Paths are relative to the pane cwd unless absolute, `~/…`, or `../…`. File pins last until Clear. Composer and `@pick` can fuzzy-filter those outside-cwd forms too.
 
 ### Edit — `#path` (write)
 
@@ -91,7 +91,7 @@ The last form **pins** the file for edit; the next CTRL+I question is applied to
 
 `#plugin/` pins every attachable file under that directory as edit targets (multi-file apply + one confirm).
 
-Flow: model returns full file(s) → wezai shows a **unified diff** in the confirm overlay (and the right pane) → **Apply** or **Cancel**. Apply writes the file and keeps a timestamped **dotfile** backup such as `.notes.txt.20260805-195530.wezai.bak` (searchable `*wezai*.bak`; configurable via `backup.*`; can be disabled).
+Flow: model returns full file(s) → wezai prints a **unified diff** in the **right-hand pane** → a confirm split opens **under the shell** (the overlay no longer covers the diff) → **Apply** or **Cancel**. Apply writes the file and keeps a timestamped **dotfile** backup such as `.notes.txt.20260805-195530.wezai.bak` (searchable `*wezai*.bak`; configurable via `backup.*`; can be disabled).
 
 Undo: palette → **Undo last edit**.
 
@@ -517,7 +517,7 @@ CTRL+I → @weather should I bring a jacket tonight?
 
 - Secrets (API keys, tokens, private keys) are redacted before send / memory  
 - Risky shell commands confirm before send (includes `terraform apply` / `destroy` / `force-unlock`)  
-- `#` / `@@` edits always show a unified diff in the confirm overlay unless you disable `require_edit_confirm`  
+- `#` / `@@` edits always show a unified diff in the right-hand pane, with Apply/Cancel in a shell split (not a full-window overlay) unless you disable `require_edit_confirm`  
 - Edit backups are timestamped wezai **dotfiles** (`backup.suffix` / `backup.dir` / `backup.dotfile`); set `backup.enabled = false` to skip writing `.bak` files  
 - No force-push action in v1  
 - `@git:latest` uses `--ff-only` only  
@@ -530,7 +530,7 @@ CTRL+I → @weather should I bring a jacket tonight?
 | Symptom | Fix |
 |---------|-----|
 | `no pane cwd` | Focus the **shell** pane, not the wezai pane; then open the palette again |
-| Two right panes | Close extras; reload config — wezai reattaches one output pane |
+| Overlay covers the diff / right pane | Edit confirm should split under the shell. Palette → **Update wezai plugin**. Fallback InputSelector (no python3) still covers the tab. |
 | Palette is WezTerm’s, not wezai | Reload config; wezai overrides `CTRL+SHIFT+P`. Or set `keybinding_palette` |
 | Empty `@history` | Run commands in fish/zsh/bash first; check `history.tail_bytes` / `palette_n` |
 | No `@tf` in palette | Need wezai ≥ 1.5.0 with `plugin/tf.lua`. Palette → **Update wezai plugin**, then reload. Log should say `tf.lua ok`. Shortcut is `CTRL+ALT+T` (not `CTRL+SHIFT+T`) |

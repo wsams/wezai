@@ -2,6 +2,7 @@ local wezterm = require("wezterm")
 local util = require("util")
 local ui = require("ui")
 local session = require("session")
+local confirm = require("confirm")
 
 local M = {}
 
@@ -387,7 +388,9 @@ local function show_diff_then_confirm(window, shell_pane, ai_pane, config, path,
         return
     end
 
-    local choices = build_confirm_choices(diff, creating, config)
+    local bak = backup_label(config)
+    local apply_label = creating and ("Create — write new file (" .. bak .. ")")
+        or ("Apply — write file (" .. bak .. ")")
     local title = string.format(
         "%s %s?  (%d → %d lines)",
         creating and "Create" or "Apply edit to",
@@ -396,32 +399,56 @@ local function show_diff_then_confirm(window, shell_pane, ai_pane, config, path,
         new_n or 0
     )
 
-    local function open_confirm()
-        ui.input_select(
-            window,
-            shell_pane,
-            title,
-            choices,
-            function(_, _, id)
-                if id == "apply" then
-                    apply()
-                elseif id == "cancel" or id == nil then
-                    ui.ai_print(ai_pane, "Cancelled — file not modified.", "warn")
-                    callback(false)
-                else
-                    -- Selected a preview row: re-open so the overlay keeps the diff visible.
-                    open_confirm()
-                end
-            end,
-            {
-                fuzzy = false,
-                alphabet = "ac",
-                description = "Review the unified diff below, then Apply or Cancel. Esc cancels.",
-            }
-        )
+    local function open_overlay_fallback()
+        local choices = build_confirm_choices(diff, creating, config)
+        local function open_confirm()
+            ui.input_select(
+                window,
+                shell_pane,
+                title,
+                choices,
+                function(_, _, id)
+                    if id == "apply" then
+                        apply()
+                    elseif id == "cancel" or id == nil then
+                        ui.ai_print(ai_pane, "Cancelled — file not modified.", "warn")
+                        callback(false)
+                    else
+                        -- Selected a preview row: re-open so the overlay keeps the diff visible.
+                        open_confirm()
+                    end
+                end,
+                {
+                    fuzzy = false,
+                    alphabet = "ac",
+                    description = "python3 confirm pane unavailable — review the embedded diff. Esc cancels.",
+                }
+            )
+        end
+        open_confirm()
     end
 
-    -- Brief delay so the AI pane paints the full diff before the overlay opens.
+    local function open_confirm()
+        local opened = confirm.open(window, shell_pane, config, {
+            title = title,
+            hint = "Full unified diff is in the wezai pane on the right. a=Apply, c=Cancel.",
+            apply_label = apply_label,
+            cancel_label = "Cancel — discard changes",
+            on_done = function(applied)
+                if applied then
+                    apply()
+                else
+                    ui.ai_print(ai_pane, "Cancelled — file not modified.", "warn")
+                    callback(false)
+                end
+            end,
+        })
+        if not opened then
+            open_overlay_fallback()
+        end
+    end
+
+    -- Brief delay so the AI pane paints the full diff before the confirm split opens.
     if wezterm.time and wezterm.time.call_after then
         wezterm.time.call_after(0.15, open_confirm)
     else
@@ -429,7 +456,7 @@ local function show_diff_then_confirm(window, shell_pane, ai_pane, config, path,
     end
 end
 
--- Show diff (AI pane + confirm overlay) and apply. callback(applied:boolean)
+-- Show diff (AI pane + confirm split) and apply. callback(applied:boolean)
 function M.confirm_and_apply(window, shell_pane, ai_pane, config, path, original, new_content, message, callback)
     callback = callback or function() end
     show_diff_then_confirm(window, shell_pane, ai_pane, config, path, original, new_content, message, callback)
@@ -505,7 +532,7 @@ function M.confirm_and_apply_many(window, shell_pane, ai_pane, config, changes, 
 
     local bak = backup_label(config)
     local title = string.format("Apply %d file edits? (%s)", #changes, bak)
-    local function open_confirm()
+    local function open_overlay_fallback()
         ui.input_select(window, shell_pane, title, {
             { id = "apply", label = "Apply all — write " .. tostring(#changes) .. " files (" .. bak .. ")" },
             { id = "cancel", label = "Cancel — discard all changes" },
@@ -521,6 +548,25 @@ function M.confirm_and_apply_many(window, shell_pane, ai_pane, config, changes, 
             alphabet = "ac",
             description = "Full diffs are in the AI pane. a=Apply all, c=Cancel.",
         })
+    end
+    local function open_confirm()
+        local opened = confirm.open(window, shell_pane, config, {
+            title = title,
+            hint = "Full diffs for every file are in the wezai pane on the right. a=Apply all, c=Cancel.",
+            apply_label = "Apply all — write " .. tostring(#changes) .. " files (" .. bak .. ")",
+            cancel_label = "Cancel — discard all changes",
+            on_done = function(applied)
+                if applied then
+                    apply_all()
+                else
+                    ui.ai_print(ai_pane, "Cancelled — files not modified.", "warn")
+                    callback(false)
+                end
+            end,
+        })
+        if not opened then
+            open_overlay_fallback()
+        end
     end
     if wezterm.time and wezterm.time.call_after then
         wezterm.time.call_after(0.15, open_confirm)
