@@ -1,3 +1,10 @@
+# [1.16.0](https://github.com/wsams/wezai/compare/v1.15.0...v1.16.0) (2026-08-20)
+
+
+### Features
+
+* docker catalog, provider/edit trust, and CI smoke tests ([#27](https://github.com/wsams/wezai/issues/27)) ([f247b79](https://github.com/wsams/wezai/commit/f247b794713b6216b0eac8355be1b7bacbf34847))
+
 # [1.15.0](https://github.com/wsams/wezai/compare/v1.14.0...v1.15.0) (2026-08-20)
 
 
