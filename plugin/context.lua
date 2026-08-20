@@ -54,6 +54,8 @@ local function is_reserved_ref(raw)
         or raw:match("^kube:") ~= nil
         or raw:match("^tf:") ~= nil
         or raw:match("^terraform:") ~= nil
+        or raw:match("^docker:") ~= nil
+        or raw == "docker"
         or raw == "weather"
         or raw:match("^weather:") ~= nil
         or raw:match("^dir:") ~= nil
@@ -137,6 +139,12 @@ function M.parse_at_refs(line)
                 return "synthetic", "tf:" .. (raw:match("^terraform:(.+)$") or "")
             end
             return "synthetic", raw
+        end
+        if raw:match("^docker:") then
+            return "synthetic", raw
+        end
+        if raw == "docker" then
+            return "synthetic", "docker:ps"
         end
         if raw == "weather" or raw:match("^weather:") then
             if raw == "weather" then
@@ -598,6 +606,25 @@ local function resolve_synthetics(synthetics, window, pane, cwd, config)
                 else
                     table.insert(blocks, {
                         label = "Terraform " .. (syn:match("^tf:(.+)$") or syn),
+                        path = "@" .. syn,
+                        content = content,
+                    })
+                    table.insert(labels, "@" .. syn)
+                end
+            end
+        elseif syn:match("^docker:") then
+            local dok, dmod = pcall(require, "docker")
+            if not dok then
+                table.insert(errors, "@" .. syn .. " failed: docker module not loaded (update wezai plugin)")
+            else
+                local content, derr = dmod.collect_attach(syn, cwd, config)
+                if derr and derr ~= "" then
+                    table.insert(errors, "@" .. syn .. " failed: " .. derr)
+                elseif content == nil then
+                    table.insert(errors, "@" .. syn .. " failed: empty attach")
+                else
+                    table.insert(blocks, {
+                        label = "Docker " .. (syn:match("^docker:(.+)$") or syn),
                         path = "@" .. syn,
                         content = content,
                     })

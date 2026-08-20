@@ -1,13 +1,13 @@
 # wezai
 
-**wezai** is a WezTerm plugin that puts an AI assistant, a command palette, and git/kube/terraform/weather/history shortcuts next to your shell — without leaving the terminal.
+**wezai** is a WezTerm plugin that puts an AI assistant, a command palette, and git/kube/terraform/docker/weather/history shortcuts next to your shell — without leaving the terminal.
 
 > **Alpha software.** wezai is in active development and under heavy testing. Behavior and APIs may change. If you hit a bug or have an idea, please [open an issue](https://github.com/wsams/wezai/issues) — reports are welcome and help shape the project. See [CONTRIBUTING.md](CONTRIBUTING.md) for what to include.
 
-- Ask questions with file, directory, clipboard, git, kube, terraform, weather, and selection context  
+- Ask questions with file, directory, clipboard, git, kube, terraform, docker, weather, and selection context  
 - Edit files in one pass (`#path`, legacy `@@path`) with a unified diff confirm and wezai dotfile backups  
 - CTRL+I composer keeps the AI log visible; `@` / `#` fuzzy-complete cwd paths plus `~/`, `/abs`, `../`; context persists until Compact/Clear  
-- One palette (`CTRL+SHIFT+P`) for Ask helpers, `@git:…`, `@kube:…`, `@tf:…`, `@weather:…`, and `@history`  
+- One palette (`CTRL+SHIFT+P`) for Ask helpers, `@git:…`, `@kube:…`, `@tf:…`, `@docker:…`, `@weather:…`, and `@history`  
 
 - Shell-aware suggestions, secret redaction, risky-command confirms  
 
@@ -65,18 +65,20 @@ Do **not** leave `update_all()` / `reload_configuration()` at config file scope 
 |-----|--------|
 | `CTRL+I` | **Ask** — composer under the shell (`@` attach, `#` edit). Esc saves a draft |
 | `CTRL+SHIFT+E` | **Ask** with pane scrollback attached as context |
-| `CTRL+SHIFT+P` | **Palette** — type `@git`, `@kube`, `@tf`, `@weather`, `@history`, or `Ask` to filter |
+| `CTRL+SHIFT+P` | **Palette** — type `@git`, `@kube`, `@tf`, `@docker`, `@weather`, `@history`, or `Ask` to filter |
 | `CTRL+SHIFT+G` | Palette scoped to `@git` |
 | `CTRL+SHIFT+K` | Palette scoped to `@kube` |
+| `CTRL+SHIFT+D` | Palette scoped to `@docker` |
 | `CTRL+ALT+T` | Palette scoped to `@tf` (not `CTRL+SHIFT+T` — that is WezTerm’s new tab) |
 | `CTRL+ALT+W` | Palette scoped to `@weather` (not `CTRL+SHIFT+W` — that is WezTerm’s close tab) |
 | `CTRL+SHIFT+H` | Palette scoped to `@history` (fuzzy unique commands; Delete like fish) |
 
-Stay on your **shell** pane. The right split is **output only** (answers, diffs, git/kube/tf/weather status). Catalog commands print immediately and spin `waiting…` until output arrives, so a slow `@weather:now` does not look frozen. Don’t run git from that pane — wezai always uses your shell’s cwd.
+Stay on your **shell** pane. The right split is **output only** (answers, diffs, git/kube/tf/docker/weather status). Catalog commands print immediately and spin `waiting…` until output arrives, so a slow `@weather:now` does not look frozen. Don’t run git from that pane — wezai always uses your shell’s cwd.
 
 ```
 CTRL+SHIFT+P  →  type @git:status  →  Enter
 CTRL+SHIFT+P  →  type @tf:validate →  Enter
+CTRL+SHIFT+P  →  type @docker:ps   →  Enter
 CTRL+I        →  @README.md is this safe?  →  Enter
 CTRL+I        →  #notes.txt sort the lines  →  review diff → Apply
 CTRL+I        →  @plugin/   (pins the tree) →  how is loading wired?
@@ -105,6 +107,8 @@ More examples: [GUIDE.md](GUIDE.md).
 | `@tf` / `@tf:validate` | Terraform helpers in the shell cwd (`terraform` binary auto-resolved) |
 | `@tf:state` in a question | Attach `terraform state list` and ask |
 | `@tf:generate …` / `@tf:debug` | AI helpers to generate or debug HCL |
+| `@docker` / `@docker:ps` | Local Docker / Compose helpers (`docker` binary auto-resolved) |
+| `@docker:ps` in a question | Attach `docker ps` and ask |
 | `@weather` / `@weather:now` | Current conditions (Open-Meteo; needs a zip) |
 | `@weather:zip 90210` | Save zip from the plugin (`~/.local/share/wezai/weather.json`) |
 | `@dir:path` | Directory listing |
@@ -129,6 +133,7 @@ Most people never need the Lua table. Copy [wezai.env.example](wezai.env.example
 | `WEZAI_OLLAMA_PATH` | `ollama_path` | unset |
 | `WEZAI_LMS_PATH` | `lms_path` | unset |
 | `WEZAI_KUBE_NS` | `kube.namespace` | kubectl current ns |
+| `WEZAI_DOCKER_BIN` | `docker.docker` | unset (auto-resolve) |
 | `WEZAI_WEATHER_ZIP` | `weather.zip` | unset (`@weather:zip` still works) |
 | `WEZAI_WEATHER_COUNTRY` | `weather.country` | `US` |
 | `WEZAI_WEATHER_UNITS` | `weather.units` | `auto` |
@@ -146,6 +151,7 @@ wezai.apply_to_config(config, {
   keybinding_history = { key = "h", mods = "CTRL|SHIFT" },
   keybinding_git = { key = "g", mods = "CTRL|SHIFT" },
   keybinding_kube = { key = "k", mods = "CTRL|SHIFT" },
+  keybinding_docker = { key = "d", mods = "CTRL|SHIFT" },
   keybinding_tf = { key = "t", mods = "CTRL|ALT" },
   keybinding_weather = { key = "w", mods = "CTRL|ALT" },
 
@@ -154,6 +160,9 @@ wezai.apply_to_config(config, {
 
   -- Optional: absolute terraform if GUI PATH can't find it
   tf = { terraform = nil, confirm_mutate = true },
+
+  -- Optional: absolute docker if GUI PATH can't find it
+  docker = { docker = nil, confirm_mutate = true },
 
   -- Optional: ZIP for @weather (Open-Meteo). Prefer WEZAI_WEATHER_ZIP or @weather:zip
   -- (saved under ~/.local/share/wezai/weather.json — does not rewrite this file).

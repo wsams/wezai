@@ -16,12 +16,12 @@ User-facing walkthroughs: [GUIDE.md](GUIDE.md). Install / config sketch: [README
 
 **wezai** is a WezTerm plugin that puts an AI assistant and utility catalogs next to the user’s shell:
 
-- **Ask** — natural-language CLI help with attachable context (`@file`, `@dir/`, selection, git, kube, tf, weather, history). CTRL+I opens a **composer pane** under the shell so the right-hand AI log stays visible; drafts persist if you Esc.
+- **Ask** — natural-language CLI help with attachable context (`@file`, `@dir/`, selection, git, kube, tf, docker, weather, history). CTRL+I opens a **composer pane** under the shell so the right-hand AI log stays visible; drafts persist if you Esc.
 - **Edit** — create/rewrite via `#path` (legacy `@@path`) with unified diff + confirm in a **shell split** (right-hand AI pane stays visible). `#dir/` pins a tree of editable files.
-- **Palette** — fuzzy `InputSelector` (`CTRL+SHIFT+P`) for Ask helpers, `@git`, `@kube`, `@tf`, `@weather`, `@history`, Compact, Clear, plugin update.
-- **AI output pane** — right-side keep-alive pane for answers, diffs, git/kube/tf/weather show output (not for running shell/git).
+- **Palette** — fuzzy `InputSelector` (`CTRL+SHIFT+P`) for Ask helpers, `@git`, `@kube`, `@tf`, `@docker`, `@weather`, `@history`, Compact, Clear, plugin update.
+- **AI output pane** — right-side keep-alive pane for answers, diffs, git/kube/tf/docker/weather show output (not for running shell/git).
 
-- **Safety** — secret redaction, risky-command confirms, mutate confirms for git/kube/tf/edit.
+- **Safety** — secret redaction, risky-command confirms, mutate confirms for git/kube/tf/docker/edit.
 
 Brand string in UI/logs: **`wezai`**. Never introduce third-party product branding in UI strings.
 
@@ -57,7 +57,7 @@ Public entrypoint: `plugin/init.lua` → `apply_to_config(wezterm_config, user_c
 ```
 plugin/
   init.lua          -- bootstrap, keybindings, ask/edit orchestration, palette hooks
-  settings.lua      -- defaults + wezai.env / process env / user merge (nested: ai_pane, history, git, kube, tf, weather, stats, files, backup, composer, context)
+  settings.lua      -- defaults + wezai.env / process env / user merge (nested: ai_pane, history, git, kube, tf, docker, weather, stats, files, backup, composer, context)
   version.lua       -- bundled semver for UI (semantic-release writes this)
   util.lua          -- paths, files, JSON parse, run_cmd (pcall), resolve_executable, large-file read, version_label
 
@@ -78,6 +78,7 @@ plugin/
   kube.lua          -- @kube action catalog
   tf.lua            -- @tf terraform action catalog
   weather.lua       -- @weather Open-Meteo catalog (zip overlay)
+  docker.lua        -- @docker container / compose catalog
   palette.lua       -- unified CTRL+SHIFT+P palette
   stats.lua         -- persistent token/model usage DB
   providers/
@@ -101,7 +102,7 @@ Node/`package.json` is for semantic-release tooling. At runtime the Lua plugin p
 
 ### 4.1 Shell pane vs AI pane
 
-- All git/kube/tf/history/cwd work must use the **shell** pane, never the AI output pane.
+- All git/kube/tf/docker/history/cwd work must use the **shell** pane, never the AI output pane.
 - `ui.shell_pane_for(window, pane)` resolves the real shell when focus is on the AI pane.
 - AI pane is output-only (keep-alive `sh`/`sleep` loop marked `WEZAI_OUTPUT_PANE`). Catalog **show** and plugin update print the command immediately, then `ui.start_busy` (braille spinner + elapsed) until output arrives.
 
@@ -145,7 +146,7 @@ Parsing (`util.parse_json_response`): try raw → fenced body → fence-stripped
 
 While Ask/Edit wait, `ui.start_progress` (when `show_loading` is true) scrolls status lines in the AI pane: model + endpoint, elapsed vs timeout with %, remaining time, and rotating phase hints (cold load / warmup / approaching timeout). Pulses use `wezterm.time.call_after` so they keep printing during long `run_child_process` yields.
 
-Catalog **show** actions (`@weather`, `@git` status/log/diff, `@kube` pods/logs, `@tf` validate/plan, …), weather ZIP geocode, and **Update wezai plugin** use `ui.start_busy` / `ui.with_busy`: print the command immediately, then a braille spinner (`waiting… 2s`). Same `show_loading` flag: `false` still prints the command plus one waiting line, but no pulses.
+Catalog **show** actions (`@weather`, `@git` status/log/diff, `@kube` pods/logs, `@tf` validate/plan, `@docker` ps/compose-ps, …), weather ZIP geocode, and **Update wezai plugin** use `ui.start_busy` / `ui.with_busy`: print the command immediately, then a braille spinner (`waiting… 2s`). Same `show_loading` flag: `false` still prints the command plus one waiting line, but no pulses.
 ### 4.5 Dialect + platform injection
 
 On every ask (`with_dialect` in `init.lua`):
@@ -161,7 +162,7 @@ Command labels print as `(fish/macos)` style when showing suggested commands.
 ### 4.6 Safety
 
 - `context.redact` strips common secrets (keys, tokens, JWTs, private keys) before prompts/history.
-- `shell.is_risky` + confirm before sending dangerous commands (includes kubectl mutate/exec patterns, terraform apply/destroy/import/state-rm/force-unlock, and git force/push/reset/etc.).
+- `shell.is_risky` + confirm before sending dangerous commands (includes kubectl mutate/exec patterns, terraform apply/destroy/import/state-rm/force-unlock, docker rm/compose-down/system prune, and git force/push/reset/etc.).
 - Edit apply and kube/tf mutate actions confirm unless config disables confirms. Edit (and other Yes/No) confirms use a **split of the shell pane** so the right-hand AI pane stays visible — that is where the unified diff is printed. WezTerm InputSelector is only the fallback when python3/`confirm.py` is missing (it covers the tab, so that fallback still embeds a diff preview in the selector).
 - Edit backups are timestamped **dotfiles** with `wezai` in the name (`backup.enabled` / `backup.dir` / `backup.suffix` / `backup.dotfile`). Default: `.notes.txt.<YYYYMMDD-HHMMSS>.wezai.bak` next to the target. Undo uses the bak file or in-memory prior content. Directory walks skip `*wezai*.bak`.
 - Kube AI helpers must prefer **read-only** next steps (get/describe/logs); never bake org-specific cluster/namespace names into the catalog.
@@ -197,13 +198,14 @@ Supports:
 | `@git` / `@git:id` | Git picker or action (see §5.4) |
 | `@kube` / `@kube:id` / `@kube:pods/<ns>` | Kube picker, action, or attach with optional ns (see §5.5) |
 | `@tf` / `@tf:id` / `@terraform:id` | Terraform picker, action, or attach (see §5.6) |
+| `@docker` / `@docker:id` | Docker / compose picker, action, or attach (see §5.10) |
 | `@weather` / `@weather:id` | Weather picker, current/forecast, or attach (see §5.9) |
 | `@history` / bare history ref | History palette / attach |
 | `@dir:path` | Shallow directory **listing** only (not file contents) |
 | `compact` / `/compact` | Compact conversation + sticky selection; keep `@`/`#` pins |
 | `clear` / `/clear` | Wipe turns, selections, drafts, and file pins |
 
-**Composer autocomplete:** typing `@` or `#` lists files and directories under the shell cwd (prefix then fuzzy). Paths that start with `~/`, `/` (absolute), `./`, or `../` live-list that location instead of the cwd. Tab inserts the highlighted path; Enter accepts an incomplete match, or sends the line when the token is already exact / the cursor is outside a ref. `@git:` / `@kube:` / `@tf:` / `@history` are reserved and do not open the file list.
+**Composer autocomplete:** typing `@` or `#` lists files and directories under the shell cwd (prefix then fuzzy). Paths that start with `~/`, `/` (absolute), `./`, or `../` live-list that location instead of the cwd. Tab inserts the highlighted path; Enter accepts an incomplete match, or sends the line when the token is already exact / the cursor is outside a ref. `@git:` / `@kube:` / `@tf:` / `@docker:` / `@weather:` / `@history` are reserved and do not open the file list.
 
 **Path parsing:** unquoted `@`/`#` refs strip trailing sentence punctuation (`?!. ,;:)` …) so `@package.json?` works. Quoted paths are literal. `#` is only a ref at token start when the next character is path-like (not `# heading` with a space).
 
@@ -223,10 +225,11 @@ Supports:
 
 Unified fuzzy `InputSelector` with scopes:
 
-- full (Ask helpers + git + kube + tf + weather + history rows)
+- full (Ask helpers + git + kube + tf + docker + weather + history rows)
 - `git` (`CTRL+SHIFT+G`)
 - `kube` (`CTRL+SHIFT+K`)
 - `tf` (`CTRL+ALT+T` — not `CTRL+SHIFT+T`, which is WezTerm SpawnTab)
+- `docker` (`CTRL+SHIFT+D`)
 - `weather` (`CTRL+ALT+W` — not `CTRL+SHIFT+W`, which is WezTerm CloseCurrentTab)
 - `history` (`CTRL+SHIFT+H`) and filtered history scopes
 
@@ -234,7 +237,7 @@ Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, 
 
 ### 5.3 History
 
-Shell is **auto-detected** from the pane (`fish` / `zsh` / `bash`). The same palette actions apply on every shell: **Run / Insert / Explain / Attach & ask / Copy / Delete**.
+Shell is **auto-detected** from the pane (`fish` / `zsh` / `bash`). The same palette actions apply on those shells: **Run / Insert / Explain / Attach & ask / Copy / Delete**.
 
 - **Fish:** list via native `history` (`fish --no-config`) when available, else `fish_history`; **Delete** sends `history delete --exact --case-sensitive` to the live pane (session + file, same as the fish pager).
 - **Bash / zsh:** unique newest-first index from `HISTFILE` (pane `/proc/pid/environ` on Linux, then `~/.bash_history` / `~/.zsh_history`). **Delete** flushes (`history -a` / `fc -W`), rewrites the file (all exact copies), reloads in-memory history — one synchronous chain via `history_edit.py`.
@@ -243,6 +246,8 @@ Shell is **auto-detected** from the pane (`fish` / `zsh` / `bash`). The same pal
 - Config: `history.max_shell` (unique cap, default 20000), `search_n`, `palette_n`, `tail_bytes` (default 8 MiB), `attach_n`, `include_scrollback`, `max_session`.
 - Attach limits: `@history:40` (all, N entries), `@history:shell:40` / `@history:ai:20` / `@history:failed:15` (filter + N). Default limit = `attach_n` (40). Bare `@history` / `@history:shell` open the palette.
 
+
+- **PowerShell / unknown:** histfile search and **Delete** are not offered. Scrollback and session events still list. Palette shows an explicit “histfile unsupported” row.
 
 ### 5.4 `@git` catalog (`git.lua`)
 
@@ -382,6 +387,37 @@ Kinds: `show` (print in AI pane), `shell` (prompt / persist zip). No model. Fore
 
 - `@weather`, `@weather:now`, `@weather:forecast`
 
+### 5.10 `@docker` catalog (`docker.lua`)
+
+Kinds: `show` (print in AI pane with command + spinner until docker returns), `shell` (run/insert in shell), `ai` (LLM diagnose/explain).
+
+Uses the shell pane cwd for compose (`docker compose --project-directory=` for show/AI). Binary resolution mirrors kube/tf: `config.docker.docker` or `util.resolve_executable` (Homebrew + login shell). Shell-kind actions insert bare `docker …` into the user’s shell.
+
+#### Invocation forms
+
+| Form | Meaning |
+|------|---------|
+| `@docker` / `@docker:` | Open docker palette |
+| `@docker:ps` | Show `docker ps` in AI pane |
+| `@docker:logs nginx` | Insert/run `docker logs --tail=200 nginx` in shell |
+| `@docker:logs200` / `@docker:logs 200` | `--tail=N` (same idea as kube logs) |
+| `@docker:diagnose why is api crashlooping?` | AI diagnose (ps + compose ps + selection) |
+| `@docker:ps what’s using port 5432?` | Attach ps + ask |
+
+Bare `@docker:id` = run action; show actions with trailing text fall through to attach + ask. `@docker should I restart?` attaches `ps`.
+
+#### Catalog kinds
+
+- Show (no model): `ps`, `ps-a`/`psa`, `images`, `compose-ps`/`compose`, `df`/`system-df`.
+- Shell (no model): `logs`/`logs-f` (tail N), `exec`, `compose-up`, `compose-down`, `compose-logs`, `pull`, `restart`, `rm`.
+- AI: `diagnose` — ps + compose ps + selection; `explain-sel` — selected docker output.
+
+Mutate confirms when `docker.confirm_mutate` (default true) for `restart` / `rm` / `compose-down`. AI helpers steer toward ps/logs/inspect — never bake hostnames into the catalog.
+
+#### Ask attach tokens
+
+- `@docker`, `@docker:ps`, `@docker:ps-a`, `@docker:images`, `@docker:compose-ps`, `@docker:df`
+
 ---
 
 ## 6. Default keybindings
@@ -395,6 +431,7 @@ Kinds: `show` (print in AI pane), `shell` (prompt / persist zip). No model. Fore
 | Git scope | `CTRL\|SHIFT+g` | Git palette |
 | Kube scope | `CTRL\|SHIFT+k` | Kube palette |
 | Terraform scope | `CTRL\|ALT+t` | Terraform palette |
+| Docker scope | `CTRL\|SHIFT+d` | Docker palette |
 | Weather scope | `CTRL\|ALT+w` | Weather palette |
 
 **Reserved:** `CTRL+SHIFT+T` is WezTerm **`SpawnTab`** — never bind wezai to it. `CTRL+SHIFT+W` is WezTerm **`CloseCurrentTab`** — weather uses `CTRL+ALT+W`. See [AGENTS.md](AGENTS.md).
@@ -405,7 +442,7 @@ Single-letter keys are also bound with opposite case for WezTerm quirks.
 
 ## 7. Configuration surface
 
-Merged in `settings.finalize`. Order: **BASE defaults** < **`wezai.env` file** < **process environment** < **`apply_to_config` table**. Nested keys deep-merged: `ai_pane`, `history`, `git`, `kube`, `tf`, `weather`, `stats`, `files`, `backup`, `composer`, `context`.
+Merged in `settings.finalize`. Order: **BASE defaults** < **`wezai.env` file** < **process environment** < **`apply_to_config` table**. Nested keys deep-merged: `ai_pane`, `history`, `git`, `kube`, `tf`, `docker`, `weather`, `stats`, `files`, `backup`, `composer`, `context`.
 
 Env file (first existing): `$WEZAI_ENV_FILE`, `$XDG_CONFIG_HOME/wezterm/wezai.env`, `~/.config/wezterm/wezai.env`, `~/.local/share/wezai/wezai.env`. Simple `KEY=VALUE` (`#` comments, optional `export`, quotes). GUI/Flatpak often has no shell env — the file is the supported path for secrets and zip/model.
 
@@ -426,6 +463,7 @@ Important fields (see `settings.lua` for full defaults):
 | `require_edit_confirm`, `require_risk_confirm` | Safety toggles |
 | `kube.namespace`, `kube.kubectl`, `kube.confirm_mutate`, `kube.max_attach_bytes` | kubectl defaults / binary / attach cap (`WEZAI_KUBE_NS`) |
 | `tf.terraform`, `tf.confirm_mutate`, `tf.max_attach_bytes` | terraform binary / mutate confirms / attach cap |
+| `docker.docker`, `docker.confirm_mutate`, `docker.max_attach_bytes` | docker binary / mutate confirms / attach cap (`WEZAI_DOCKER_BIN`) |
 | `weather.zip`, `weather.country`, `weather.units`, `weather.path` | Open-Meteo location (plugin `@weather:zip` overlay beats `zip` / `WEZAI_WEATHER_ZIP`) |
 | `git.default_branch`, `git.confirm_push`, `git.max_attach_bytes` | git catalog |
 | `history.*` | Shell/session history: `max_shell` unique cap, `search_n` (CTRL+SHIFT+H), `palette_n` (unified), `tail_bytes`, delete/search backends |
@@ -439,8 +477,8 @@ Important fields (see `settings.lua` for full defaults):
 | `type` | Module | Notes |
 |--------|--------|-------|
 | `http` | `providers.chat_http` | OpenAI-compatible `/v1/chat/completions` (includes Ollama at `http://host:11434/v1/chat/completions`) |
-| `google` | `providers.gemini_api` | Gemini `generateContent` + JSON schema |
-| `ollama` | `providers.ollama_bin` | `ollama run … --format json` |
+| `google` | `providers.gemini_api` | Gemini `generateContent` + JSON schema. Ask schema is `message`+`command`; `#` edits use a schema that also allows `file` / `files`. |
+| `ollama` | `providers.ollama_bin` | `ollama run … --format json`. `ready()` accepts PATH `ollama` when `ollama_path` is unset (same default as `ask()`). |
 | `local` | `providers.lms_bin` | `lms chat …` |
 
 Shared transport: `providers.proc`.
@@ -450,7 +488,7 @@ For `http` + Ollama: pick an **instruct** model that obeys §4.4; set a high `ti
 
 ## 9. Bootstrap / module path
 
-WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scanning `wezterm.plugin.list()` for fingerprint files (`settings.lua`, `stats.lua`, `providers/init.lua`, `palette.lua`). Each listed `plugin_dir` is tried as **clone-root/`plugin/`** and as **the Lua dir itself** (Flatpak/Bazzite sometimes report the latter). Among matches it **prefers the most complete install** (counts `git.lua` / `kube.lua` / `tf.lua` / `weather.lua` / `version.lua` / `composer.lua` / `confirm.lua` / …) so a stale local checkout cannot shadow an updated GitHub cache that has newer catalogs. Local/`wsams` paths win only as a tie-breaker. Then extends `package.path` for `?.lua` and `?/init.lua`, and passes `plugin_dir` + repo root into `util.set_install_dirs` so `util.version_label()` can `require("version")` and walk up for `package.json` / git HEAD. `@tf` and `@weather` are soft-required — a missing `tf.lua` / `weather.lua` logs a warning and disables that catalog instead of failing the whole plugin.
+WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scanning `wezterm.plugin.list()` for fingerprint files (`settings.lua`, `stats.lua`, `providers/init.lua`, `palette.lua`). Each listed `plugin_dir` is tried as **clone-root/`plugin/`** and as **the Lua dir itself** (Flatpak/Bazzite sometimes report the latter). Among matches it **prefers the most complete install** (counts `git.lua` / `kube.lua` / `tf.lua` / `weather.lua` / `docker.lua` / `version.lua` / `composer.lua` / `confirm.lua` / …) so a stale local checkout cannot shadow an updated GitHub cache that has newer catalogs. Local/`wsams` paths win only as a tie-breaker. Then extends `package.path` for `?.lua` and `?/init.lua`, and passes `plugin_dir` + repo root into `util.set_install_dirs` so `util.version_label()` can `require("version")` and walk up for `package.json` / git HEAD. `@tf`, `@weather`, and `@docker` are soft-required — a missing `tf.lua` / `weather.lua` / `docker.lua` logs a warning and disables that catalog instead of failing the whole plugin.
 
 ---
 
@@ -459,6 +497,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 ### semantic-release (direct npm — not a third-party GitHub Action wrapper)
 
 - Workflow: `.github/workflows/release.yml` on push to `main`.
+- Tests: `.github/workflows/test.yml` runs `scripts/test_settings.lua`, `scripts/test_history.lua`, `scripts/test_parse_refs.py`, `scripts/test_json_extract.py`, and `composer.py --self-test` on push/PR.
 - Config: `.releaserc.json` — changelog + version bump in git + GitHub Release; **`npmPublish: false`**. `@semantic-release/exec` writes `plugin/version.lua` during prepare so WezTerm installs that cannot see `package.json` still show a semver.
 - Conventional Commits required (`feat:`, `fix:`, `BREAKING CHANGE`, etc.).
 - Node: `^22.14.0 || >=24.10.0`.
@@ -509,15 +548,19 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] `@kube:use-ns myns` / `@kube:diagnose`; mutates confirm.
 - [ ] `@tf:validate` prints in AI pane; `@tf:plan` runs in shell; `@tf:apply` confirms.
 - [ ] `@tf:generate …` / `@tf:debug` use the model; attach `@tf:state what’s orphaned?` works.
+- [ ] `@docker:ps` prints in AI pane; `@docker:compose-up` runs in shell; `@docker:rm` confirms.
+- [ ] Ask `@docker:ps what’s using 5432?` attaches ps; `@docker:diagnose` uses the model.
 - [ ] `@weather:zip 90210` persists overlay; `@weather:now` prints the command + spinner before Open-Meteo output; `@weather:zip clear` falls back to `weather.zip`.
 - [ ] Ask `@weather should I bring a jacket?` attaches current conditions (needs a zip).
 - [ ] Stats banner/line appears; `~/.local/share/wezai/stats.json` updates.
-- [ ] Git/kube/tf/weather/history always use shell cwd (not AI pane).
+- [ ] Git/kube/tf/docker/weather/history always use shell cwd (not AI pane).
 - [ ] `@history` / `CTRL+SHIFT+H` fuzzy-filters unique commands from the detected shell (fish native `history` or bash/zsh `HISTFILE`); row **Delete** removes all copies (fish `history delete`, bash/zsh flush+rewrite+reload).
 - [ ] Local Ollama HTTP: with an unloaded large model, `timeout` ≥ load+warmup still returns JSON (not curl 28 / 0 bytes); second Ask is fast while model stays loaded.
 - [ ] During a multi-minute Ask wait, AI pane scrolls progress with model/endpoint, elapsed vs timeout %, and rotating hints (not only a bare “thinking…” line).
-- [ ] Chatty model wrapping JSON in prose still parses via `extract_json_object` when a single object is present.
+- [ ] Chatty model wrapping JSON in prose still parses via `extract_json_object` when a single object is present. Unparseable Ask replies print as errors (not assistant turns).
 - [ ] `#` / `@@` edit accepting `content` alias when `file` is missing still shows diff confirm (diff visible in the right pane; confirm split does not cover it).
+- [ ] Gemini `type = "google"` `#` edits return `file` / `files` (schema allows those keys; Ask still uses message+command).
+- [ ] `#dir/` edit that omits some pinned files warns which paths were skipped before confirm.
 - [ ] Apply writes `.file.<YYYYMMDD-HHMMSS>.wezai.bak`; `backup.enabled = false` skips bak and Undo still works; `backup.dir` relocates bak files; `backup.dotfile = false` drops the leading dot.
 ---
 
@@ -546,10 +589,11 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 | Install version label | `plugin/version.lua`, `plugin/util.lua` (`version_label` / `brand_with_version` / `sync_plugin_git`) |
 | Settings / env overlay | `plugin/settings.lua` (`wezai.env`, `WEZAI_*`) |
 | Providers | `plugin/providers/` |
-| Git / Kube / Terraform catalogs | `plugin/git.lua`, `plugin/kube.lua`, `plugin/tf.lua` |
+| Git / Kube / Terraform / Docker catalogs | `plugin/git.lua`, `plugin/kube.lua`, `plugin/tf.lua`, `plugin/docker.lua` |
 | Weather / zip overlay | `plugin/weather.lua` (`set_zip`, `resolved_location`, `collect_attach`) |
 | Kube ns / kubectl bin / attach | `plugin/kube.lua` (`resolve_namespace`, `kubectl_bin`, `collect_attach`) |
 | Terraform bin / attach / AI | `plugin/tf.lua` (`terraform_bin`, `collect_attach`, `generate`/`debug`) |
+| Docker bin / attach / AI | `plugin/docker.lua` (`docker_bin`, `collect_attach`, `diagnose`) |
 | Fuzzy files | `plugin/files.lua` |
 | Usage DB | `plugin/stats.lua` |
 | User docs | `README.md`, `GUIDE.md` |

@@ -19,7 +19,7 @@ RESERVED = (
 def is_reserved(raw: str) -> bool:
     if raw in RESERVED:
         return True
-    for p in ("history:", "git:", "kube:", "tf:", "terraform:", "dir:"):
+    for p in ("history:", "git:", "kube:", "tf:", "terraform:", "docker:", "weather:", "dir:"):
         if raw.startswith(p) or raw == p[:-1]:
             return True
     return False
@@ -66,6 +66,14 @@ def parse_at_refs(line: str) -> dict:
         if raw.startswith("tf:") or raw.startswith("terraform:"):
             if raw.startswith("terraform:"):
                 return "synthetic", "tf:" + raw[len("terraform:") :]
+            return "synthetic", raw
+        if raw == "docker" or raw.startswith("docker:"):
+            if raw == "docker":
+                return "synthetic", "docker:ps"
+            return "synthetic", raw
+        if raw == "weather" or raw.startswith("weather:"):
+            if raw == "weather":
+                return "synthetic", "weather:now"
             return "synthetic", raw
         if raw.startswith("dir:"):
             return "synthetic", raw
@@ -127,6 +135,9 @@ def main() -> int:
         ("@a.lua #b.lua add tests", ["a.lua"], ["b.lua"], [], "add tests"),
         ("# heading with space", [], [], [], "# heading with space"),
         ("@git:status what should I commit?", [], [], ["git:status"], "what should I commit?"),
+        ("@docker:ps what's running?", [], [], ["docker:ps"], "what's running?"),
+        ("@docker should I restart?", [], [], ["docker:ps"], "should I restart?"),
+        ("@weather:now jacket?", [], [], ["weather:now"], "jacket?"),
         ('@"path with spaces" explain', ["path with spaces"], [], [], "explain"),
         ("plain question", [], [], [], "plain question"),
     ]

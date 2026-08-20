@@ -37,7 +37,7 @@ Other WezTerm defaults to treat carefully when picking shortcuts (non-exhaustive
 ## Keybinding checklist (before shipping a new shortcut)
 
 1. Check [WezTerm default keys](https://wezterm.org/config/default-keys.html) for conflicts.
-2. Prefer `CTRL|SHIFT` + a free letter for catalog scopes (`G` git, `K` kube, `H` history) — **not `T`** (SpawnTab) or **`W`** (CloseCurrentTab).
+2. Prefer `CTRL|SHIFT` + a free letter for catalog scopes (`G` git, `K` kube, `H` history, `D` docker) — **not `T`** (SpawnTab) or **`W`** (CloseCurrentTab).
 3. Update `settings.lua` defaults, `init.lua` bind site, and README / GUIDE / SPECS tables together.
 4. Call out any intentional override of a WezTerm default in those docs.
 
@@ -76,7 +76,7 @@ Raise `timeout` to **300–600** for big local GGUFs, or pre-warm (`ollama run �
 
 ## Related pitfalls
 
-- Plugin modules load via fingerprint scan in `init.lua`. Prefer the **most complete** install (`tf.lua`, `weather.lua`, etc.) so a stale local checkout cannot hide new catalogs.
-- After merging catalog work to GitHub installs: users need palette **Update wezai plugin** (or `update_all()` + config reload). Log line should include `tf.lua ok` / `weather.lua ok` when present.
+- Plugin modules load via fingerprint scan in `init.lua`. Prefer the **most complete** install (`tf.lua`, `weather.lua`, `docker.lua`, etc.) so a stale local checkout cannot hide new catalogs.
+- After merging catalog work to GitHub installs: users need palette **Update wezai plugin** (or `update_all()` + config reload). Log line should include `tf.lua ok` / `weather.lua ok` / `docker.lua ok` when present.
 - **Never** call `wezterm.run_child_process` from a module’s main chunk (inside `require`). WezTerm yields in that API, and Lua errors with `attempt to yield across a C-call boundary`, taking down config load. `util.version_label()` must stay file/`require("version")` only.
 - Shell vs AI pane, provider contract, and safety rules: see SPECS §4.

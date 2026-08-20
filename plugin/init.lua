@@ -20,6 +20,7 @@ do
         "kube.lua",
         "tf.lua",
         "weather.lua",
+        "docker.lua",
         "history.lua",
         "history_store.lua",
         "files.lua",
@@ -133,11 +134,13 @@ do
         package.path = table.concat({ package.path, root .. "?.lua", root .. "?/init.lua" }, ";")
         local has_tf = file_exists(root .. "tf.lua")
         local has_weather = file_exists(root .. "weather.lua")
+        local has_docker = file_exists(root .. "docker.lua")
         wezterm.log_info(
             "wezai: load path "
                 .. root
                 .. (has_tf and " (tf.lua ok)" or " (tf.lua MISSING — palette → Update wezai plugin, then reload)")
                 .. (has_weather and " (weather.lua ok)" or " (weather.lua MISSING)")
+                .. (has_docker and " (docker.lua ok)" or " (docker.lua MISSING)")
         )
         discovered_plugin_dir = root
         discovered_repo_dir = chosen and chosen.repo
@@ -236,6 +239,44 @@ do
     end
 end
 
+-- Soft-load @docker so a stale install cannot take down the whole plugin.
+local docker
+do
+    local ok, mod = pcall(require, "docker")
+    if ok then
+        docker = mod
+    else
+        wezterm.log_warn(
+            "wezai: @docker catalog disabled — "
+                .. tostring(mod)
+                .. " (sync plugin: wezterm.plugin.update_all() or update your local require path)"
+        )
+        docker = {
+            list_actions = function()
+                return {}
+            end,
+            parse_line = function()
+                return nil
+            end,
+            run_action = function(window, pane, config)
+                local ai = ui.ensure_ai_pane(window, pane, config)
+                ui.ai_print(
+                    ai,
+                    "@docker unavailable — plugin missing docker.lua. Run wezterm.plugin.update_all() then reload config.",
+                    "error"
+                )
+            end,
+            collect_attach = function()
+                return nil, "docker module not loaded"
+            end,
+            open_picker = function(window, pane, config)
+                local ai = ui.ensure_ai_pane(window, pane, config)
+                ui.ai_print(ai, "@docker unavailable — update the wezai plugin cache.", "error")
+            end,
+        }
+    end
+end
+
 local palette = require("palette")
 local files = require("files")
 local composer = require("composer")
@@ -252,14 +293,16 @@ local function note_usage(ai_pane, config, meta)
     ui.ai_print(ai_pane, stats.format_turn(meta, db), "status")
 end
 
+--- Parse Ask JSON. On failure return nil so callers do not treat the blob as
+--- an assistant turn (no session history, no command send).
 local function parse_ai_response(response)
     local json, err = util.parse_json_response(response)
     if not json then
         local cleaned = util.clean_response(response)
         wezterm.log_error("wezai: Failed to parse JSON response: ", cleaned)
-        return { message = "❌ Error parsing AI response \r\n" .. cleaned, command = nil }
+        return nil, err or "Failed to parse JSON response", cleaned
     end
-    return json
+    return json, nil, nil
 end
 
 local function with_dialect(config, pane)
@@ -329,7 +372,17 @@ local function handle_ai_request(window, shell_pane, prompt, config, opts)
 
     note_usage(ai_pane, config, meta)
 
-    local response = parse_ai_response(stdout)
+    local response, parse_err, cleaned = parse_ai_response(stdout)
+    if not response then
+        ui.ai_print(
+            ai_pane,
+            "Failed to parse JSON response (need a JSON object with \"message\").\n"
+                .. (cleaned or parse_err or ""),
+            "error"
+        )
+        return
+    end
+
     if response.message and response.message ~= "" then
         ui.ai_print(ai_pane, response.message, "message")
         session.add_turn(window, "assistant", context.redact(response.message), config.chat_max_turns)
@@ -372,8 +425,11 @@ local function collect_edit_changes(response, request)
 
     local changes = {}
     local used = {}
+    local skipped_empty = {}
+    local unmatched = {}
     local function add(path, content)
         if type(content) ~= "string" or content == "" then
+            skipped_empty[#skipped_empty + 1] = path or "(no path)"
             return
         end
         local t = (path and by_path[path]) or nil
@@ -384,7 +440,11 @@ local function collect_edit_changes(response, request)
         if not t and #targets == 1 then
             t = targets[1]
         end
-        if not t or not t.path or used[t.path] then
+        if not t or not t.path then
+            unmatched[#unmatched + 1] = path or "(no path)"
+            return
+        end
+        if used[t.path] then
             return
         end
         used[t.path] = true
@@ -429,7 +489,18 @@ local function collect_edit_changes(response, request)
             add(request.target_path, new_content)
         end
     end
-    return changes
+    local missing = {}
+    for _, t in ipairs(targets) do
+        if t.path and not used[t.path] then
+            missing[#missing + 1] = t.path
+        end
+    end
+    return changes, {
+        missing = missing,
+        unmatched = unmatched,
+        empty = skipped_empty,
+        target_count = #targets,
+    }
 end
 
 local function handle_edit_request(window, shell_pane, request, config)
@@ -472,13 +543,38 @@ local function handle_edit_request(window, shell_pane, request, config)
     end
 
     -- Prefer "file" / "files"; accept common aliases models invent despite the prompt.
-    local changes = collect_edit_changes(response, request)
+    local changes, info = collect_edit_changes(response, request)
     if #changes == 0 then
-        ui.ai_print(ai_pane, "Edit response missing non-empty file contents", "error")
+        ui.ai_print(
+            ai_pane,
+            "Edit response missing non-empty file contents (looked for \"file\", \"content\", \"new_content\", and \"files\"[].path + content).",
+            "error"
+        )
+        if info and info.unmatched and #info.unmatched > 0 then
+            ui.ai_print(ai_pane, "Unmatched model paths: " .. table.concat(info.unmatched, ", "), "warn")
+        end
+        if info and info.empty and #info.empty > 0 then
+            ui.ai_print(ai_pane, "Empty bodies for: " .. table.concat(info.empty, ", "), "warn")
+        end
         if response.message then
             ui.ai_print(ai_pane, tostring(response.message), "message")
         end
         return
+    end
+    if info and info.missing and #info.missing > 0 then
+        ui.ai_print(
+            ai_pane,
+            "Model omitted "
+                .. tostring(#info.missing)
+                .. " of "
+                .. tostring(info.target_count)
+                .. " edit targets:\n"
+                .. table.concat(info.missing, "\n"),
+            "warn"
+        )
+    end
+    if info and info.unmatched and #info.unmatched > 0 then
+        ui.ai_print(ai_pane, "Ignored extra model paths: " .. table.concat(info.unmatched, ", "), "warn")
     end
 
     local apply_cb = function(applied)
@@ -619,11 +715,11 @@ local function prompt_for_ai(window, pane, config, opts)
             .. util.truncate(selected_file)
             .. "\n---"
     elseif selection then
-        description = "wezai — selection sticky until Compact; @pick / #file / @git / @kube / @tf / @weather\n---\n"
+        description = "wezai — selection sticky until Compact; @pick / #file / @git / @kube / @tf / @docker / @weather\n---\n"
             .. util.truncate(selection)
             .. "\n---"
     else
-        description = "wezai — @ attach  # edit  · @git / @weather / @history  · compact / clear  · palette CTRL+SHIFT+P"
+        description = "wezai — @ attach  # edit  · @git / @docker / @weather / @history  · compact / clear  · palette CTRL+SHIFT+P"
         if share_pane then
             description = description .. " · sharing pane history"
         end
@@ -727,6 +823,17 @@ local function prompt_for_ai(window, pane, config, opts)
             end
         end
 
+        local docker_ref = docker.parse_line(line)
+        if docker_ref then
+            if docker_ref.mode == "picker" then
+                palette.show(win, p, config, { scope = "docker" })
+                return
+            elseif docker_ref.mode == "run" then
+                docker.run_action(win, p, config, docker_ref.id, docker_ref.extra, { count = docker_ref.count })
+                return
+            end
+        end
+
         local function run_prepared(req_line)
             local ai_pane = ui.ensure_ai_pane(win, p, config)
             local busy
@@ -736,6 +843,7 @@ local function prompt_for_ai(window, pane, config, opts)
                     or req_line:find("@git", 1, true)
                     or req_line:find("@kube", 1, true)
                     or req_line:find("@tf", 1, true)
+                    or req_line:find("@docker", 1, true)
                 )
             then
                 busy = ui.start_busy(ai_pane, {
@@ -898,6 +1006,14 @@ local function prompt_for_ai(window, pane, config, opts)
             return
         end
         wezterm.log_warn("wezai: composer unavailable (" .. tostring(err) .. "); falling back to overlay prompt")
+        local ai_pane = ui.ensure_ai_pane(window, pane, config)
+        ui.ai_print(
+            ai_pane,
+            "Composer needs python3 + plugin/composer.py ("
+                .. tostring(err)
+                .. "). Using overlay prompt. See GUIDE.md Troubleshooting.",
+            "warn"
+        )
     end
     open_overlay_prompt()
 end
@@ -995,6 +1111,14 @@ tf._ask = function(win, p, config, prompt, user_text)
 end
 
 tf._dispatch = function(win, p, request, config)
+    dispatch_request(win, p, request, config, {})
+end
+
+docker._ask = function(win, p, config, prompt, user_text)
+    handle_ai_request(win, p, prompt, config, { user_text = user_text or "docker" })
+end
+
+docker._dispatch = function(win, p, request, config)
     dispatch_request(win, p, request, config, {})
 end
 
@@ -1278,6 +1402,16 @@ local function apply_to_config(wezterm_config, user_config)
             config.keybinding_weather.mods,
             wezterm.action_callback(function(window, pane)
                 palette.show(window, pane, config, { scope = "weather" })
+            end)
+        )
+    end
+
+    if type(config.keybinding_docker) == "table" and config.keybinding_docker.key then
+        bind_key(
+            config.keybinding_docker.key,
+            config.keybinding_docker.mods,
+            wezterm.action_callback(function(window, pane)
+                palette.show(window, pane, config, { scope = "docker" })
             end)
         )
     end

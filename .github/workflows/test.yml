@@ -1,0 +1,31 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Lua and Python smoke tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Lua
+        run: sudo apt-get update && sudo apt-get install -y lua5.4 python3
+
+      - name: Run tests
+        run: |
+          set -euo pipefail
+          lua5.4 scripts/test_settings.lua
+          lua5.4 scripts/test_history.lua
+          python3 scripts/test_parse_refs.py
+          python3 scripts/test_json_extract.py
+          WEZAI_COMPOSER_TEST=1 python3 plugin/composer.py --self-test
