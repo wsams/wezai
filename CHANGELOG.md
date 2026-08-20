@@ -1,3 +1,10 @@
+# [1.15.0](https://github.com/wsams/wezai/compare/v1.14.0...v1.15.0) (2026-08-20)
+
+
+### Features
+
+* **history:** fuzzy unique search and fish-style delete across shells ([24cea66](https://github.com/wsams/wezai/commit/24cea6635861f1b9788d4609cab36e2905e893fd))
+
 # [1.14.0](https://github.com/wsams/wezai/compare/v1.13.0...v1.14.0) (2026-08-20)
 
 
