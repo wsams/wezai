@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/wsams/wezai/compare/v1.13.0...v1.14.0) (2026-08-20)
+
+
+### Features
+
+* fuzzy-complete outside-cwd paths and keep the AI pane visible on confirm ([#25](https://github.com/wsams/wezai/issues/25)) ([b7032b9](https://github.com/wsams/wezai/commit/b7032b92207162a9dfe3f321964907c2411a778d))
+
 # [1.13.0](https://github.com/wsams/wezai/compare/v1.12.1...v1.13.0) (2026-08-19)
 
 
