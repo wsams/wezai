@@ -26,6 +26,7 @@ jobs:
           set -euo pipefail
           lua5.4 scripts/test_settings.lua
           lua5.4 scripts/test_history.lua
+          lua5.4 scripts/test_fold.lua
           python3 scripts/test_parse_refs.py
           python3 scripts/test_json_extract.py
           WEZAI_COMPOSER_TEST=1 python3 plugin/composer.py --self-test

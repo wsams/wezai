@@ -2,6 +2,7 @@ local wezterm = require("wezterm")
 local act = wezterm.action
 local util = require("util")
 local stats = require("stats")
+local fold = require("fold")
 
 local M = {}
 
@@ -30,6 +31,7 @@ local KIND_STYLE = {
     system = { color = BRIGHT_BLACK, label = nil, gap_before = false },
     status = { color = DIM .. YELLOW, label = nil, gap_before = false },
     message = { color = CYAN, label = "assistant", gap_before = true },
+    question = { color = BOLD .. MAGENTA, label = "you", gap_before = true },
     command = { color = GREEN, label = "command", gap_before = true },
     attach = { color = MAGENTA, label = "context", gap_before = true },
     error = { color = RED, label = "error", gap_before = true },
@@ -430,7 +432,7 @@ local function format_block(text, kind, pad)
         table.insert(lines, rendered)
     end
 
-    if kind == "message" or kind == "command" or kind == "success" or kind == "error" or kind == "diff" or kind == "git" or kind == "plain" then
+    if kind == "message" or kind == "question" or kind == "command" or kind == "success" or kind == "error" or kind == "diff" or kind == "git" or kind == "plain" then
         table.insert(lines, "")
     end
 
@@ -446,6 +448,9 @@ local function infer_kind(text)
     end
     if text:find("^💬") then
         return "message"
+    end
+    if text:find("^❓") then
+        return "question"
     end
     if text:find("^⌘") or text:find("^Command") then
         return "command"
@@ -642,7 +647,50 @@ function M.begin_turn(ai_pane, title)
     end
 end
 
--- kind: message|command|attach|error|success|warn|status|system|diff|turn
+local function pane_cols(pane)
+    if not pane then
+        return nil
+    end
+    local ok, dim = pcall(function()
+        return pane:get_dimensions()
+    end)
+    if not ok or type(dim) ~= "table" then
+        return nil
+    end
+    return tonumber(dim.cols)
+end
+
+--- Echo the Ask/Edit question. Long pastes fold to a preview + leftover count.
+--- print_opts.unfold = true prints the full text (palette: Show last question).
+function M.print_question(ai_pane, text, config, print_opts)
+    if type(text) ~= "string" then
+        return
+    end
+    local trimmed = text:match("^%s*(.-)%s*$") or ""
+    if trimmed == "" then
+        return
+    end
+    print_opts = print_opts or {}
+    if print_opts.unfold then
+        M.ai_print(ai_pane, trimmed, "question")
+        return
+    end
+    local opts = (config and config.ai_pane) or {}
+    local cols = pane_cols(ai_pane)
+    local pad = pad_cols_for(ai_pane)
+    local max_line = opts.question_fold_line_chars
+    if max_line == nil and cols then
+        max_line = math.max(24, cols - pad - 2)
+    end
+    local folded = fold.fold_text(trimmed, {
+        max_lines = opts.question_fold_lines,
+        max_chars = opts.question_fold_chars,
+        max_line_chars = max_line,
+    })
+    M.ai_print(ai_pane, folded, "question")
+end
+
+-- kind: message|question|command|attach|error|success|warn|status|system|diff|turn
 function M.ai_print(ai_pane, text, kind)
     if not text then
         return
@@ -652,6 +700,8 @@ function M.ai_print(ai_pane, text, kind)
     local cleaned = text
     if kind == "message" then
         cleaned = cleaned:gsub("^💬%s*", "")
+    elseif kind == "question" then
+        cleaned = cleaned:gsub("^❓%s*", "")
     elseif kind == "command" then
         cleaned = cleaned:gsub("^⌘%s*", "")
     elseif kind == "attach" then

@@ -62,6 +62,7 @@ plugin/
   util.lua          -- paths, files, JSON parse, run_cmd (pcall), resolve_executable, large-file read, version_label
 
   ui.lua            -- AI pane lifecycle, styling, InputSelector, usage banner, start_progress / start_busy
+  fold.lua          -- fold long Ask/Edit question text for the write-only AI pane
   session.lua       -- per-tab chat memory + pinned @/# files + draft + last edit
   shell.lua         -- shell detect, OS platform hint, risk gate, clipboard, send_command
   context.lua       -- @ / # parsing (@@ alias), dir walk, token budget, redaction
@@ -180,7 +181,9 @@ Command labels print as `(fish/macos)` style when showing suggested commands.
 
 ### 5.1 Ask (`keybinding`, default often remapped to CTRL+I by users)
 
-Flow: **composer pane** (split of the shell, AI log stays visible) → parse refs → `context.prepare_request` → `providers.ask` → print message/command → optional `shell.send_command`.
+Flow: **composer pane** (split of the shell, AI log stays visible) → parse refs → `context.prepare_request` → `providers.ask` → print the **question** (`▶ you`, folded if long) then message/command → optional `shell.send_command`.
+
+**Question echo:** Ask and `#` edit print whatever was typed (`source_line` when present, else `user_text`) under a `you` label after the turn rule, before progress. Long pastes fold to the first `ai_pane.question_fold_lines` lines / `question_fold_chars` (defaults 8 / 600); leftover lines show as `… folded N more lines (M chars)`. The write-only pane cannot interactively expand — palette **Show last question** reprints the full text. Secrets are redacted the same way as the prompt. Catalog AI helpers echo their `user_text` tag (`git:msg`, `kube:diagnose`, …).
 
 If `composer.enabled = false` or python3/`composer.py` is missing, fall back to WezTerm `PromptInputLine` (full-window overlay). Esc in the composer **saves a draft** and restores it on the next CTRL+I.
 
@@ -233,7 +236,7 @@ Unified fuzzy `InputSelector` with scopes:
 - `weather` (`CTRL+ALT+W` — not `CTRL+SHIFT+W`, which is WezTerm CloseCurrentTab)
 - `history` (`CTRL+SHIFT+H`) and filtered history scopes
 
-Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, Attach/Edit file (fuzzy), Undo edit, Copy last command, Shorter re-ask, Pick model, **Compact chat (keep @/# files)**, **Clear chat + file context**, **Show wezai install**, **Update wezai plugin**.
+Core palette rows include: Ask, Ask+pane, Fix last error, Explain last command, Attach/Edit file (fuzzy), Undo edit, Copy last command, **Show last question**, Shorter re-ask, Pick model, **Compact chat (keep @/# files)**, **Clear chat + file context**, **Show wezai install**, **Update wezai plugin**.
 
 ### 5.3 History
 
@@ -349,7 +352,7 @@ Per-tab:
 - Pinned `@` attach paths and `#` edit targets (re-read from disk each turn; survive Compact)
 - Sticky selection / extra context (cleared by Compact)
 - Composer draft (Esc in CTRL+I)
-- Last question/command, last edit batch (for undo), history events
+- Last question/command (the typed Ask/`#` line, used to echo `▶ you` and for **Show last question**), last edit batch (for undo), history events
 
 **Compact** folds older turns into a recap and drops sticky selection text. **Clear** wipes pins, draft, turns, and extras.
 
@@ -556,7 +559,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] Git/kube/tf/docker/weather/history always use shell cwd (not AI pane).
 - [ ] `@history` / `CTRL+SHIFT+H` fuzzy-filters unique commands from the detected shell (fish native `history` or bash/zsh `HISTFILE`); row **Delete** removes all copies (fish `history delete`, bash/zsh flush+rewrite+reload).
 - [ ] Local Ollama HTTP: with an unloaded large model, `timeout` ≥ load+warmup still returns JSON (not curl 28 / 0 bytes); second Ask is fast while model stays loaded.
-- [ ] During a multi-minute Ask wait, AI pane scrolls progress with model/endpoint, elapsed vs timeout %, and rotating hints (not only a bare “thinking…” line).
+- [ ] Ask / `#` edit print a `you` block with the typed question before the assistant reply; a 20-line paste folds with a leftover-line note. Palette **Show last question** reprints the full text.
 - [ ] Chatty model wrapping JSON in prose still parses via `extract_json_object` when a single object is present. Unparseable Ask replies print as errors (not assistant turns).
 - [ ] `#` / `@@` edit accepting `content` alias when `file` is missing still shows diff confirm (diff visible in the right pane; confirm split does not cover it).
 - [ ] Gemini `type = "google"` `#` edits return `file` / `files` (schema allows those keys; Ask still uses message+command).
@@ -586,6 +589,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 | Apply/Cancel confirm (AI pane stays visible) | `plugin/confirm.lua`, `plugin/confirm.py` |
 | `run_cmd` / `resolve_executable` | `plugin/util.lua` |
 | Pane / UI | `plugin/ui.lua` |
+| Fold long questions | `plugin/fold.lua` (`ui.print_question`) |
 | Install version label | `plugin/version.lua`, `plugin/util.lua` (`version_label` / `brand_with_version` / `sync_plugin_git`) |
 | Settings / env overlay | `plugin/settings.lua` (`wezai.env`, `WEZAI_*`) |
 | Providers | `plugin/providers/` |

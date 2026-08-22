@@ -145,6 +145,11 @@ function M.show(window, pane, config, opts)
                     H.copy_cmd(win, p, cfg)
                 end
             end)
+            add(choices, handlers, "core:show_question", "Show last question", function(win, p, cfg)
+                if H.show_question then
+                    H.show_question(win, p, cfg)
+                end
+            end)
             add(choices, handlers, "core:shorter", "Re-ask last question (shorter)", function(win, p, cfg)
                 if H.shorter then
                     H.shorter(win, p, cfg)
