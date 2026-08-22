@@ -1,3 +1,10 @@
+# [1.17.0](https://github.com/wsams/wezai/compare/v1.16.0...v1.17.0) (2026-08-22)
+
+
+### Features
+
+* **ui:** echo Ask/Edit questions in the AI pane ([#28](https://github.com/wsams/wezai/issues/28)) ([d5c1e93](https://github.com/wsams/wezai/commit/d5c1e93ad5603df6ee11a819d9313e3b812693b2))
+
 # [1.16.0](https://github.com/wsams/wezai/compare/v1.15.0...v1.16.0) (2026-08-20)
 
 
