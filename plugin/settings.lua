@@ -57,7 +57,16 @@ local BASE = {
         dir = nil,
     },
     backup_suffix = ".wezai.bak",
-    ai_pane = { enabled = true, direction = "Right", size_percent = 35, pad_cols = 2 },
+    ai_pane = {
+        enabled = true,
+        direction = "Right",
+        size_percent = 35,
+        pad_cols = 2,
+        -- Echo the Ask/Edit question; fold long pastes in the write-only pane.
+        question_fold_lines = 8,
+        question_fold_chars = 600,
+        question_fold_line_chars = nil, -- nil → fit the pane width when known
+    },
     -- Ask composer (CTRL+I): split of the shell pane so the AI log stays visible.
     composer = {
         enabled = true,

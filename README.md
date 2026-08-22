@@ -73,7 +73,7 @@ Do **not** leave `update_all()` / `reload_configuration()` at config file scope 
 | `CTRL+ALT+W` | Palette scoped to `@weather` (not `CTRL+SHIFT+W` — that is WezTerm’s close tab) |
 | `CTRL+SHIFT+H` | Palette scoped to `@history` (fuzzy unique commands; Delete like fish) |
 
-Stay on your **shell** pane. The right split is **output only** (answers, diffs, git/kube/tf/docker/weather status). Catalog commands print immediately and spin `waiting…` until output arrives, so a slow `@weather:now` does not look frozen. Don’t run git from that pane — wezai always uses your shell’s cwd.
+Stay on your **shell** pane. The right split is **output only** (your question, answers, diffs, git/kube/tf/docker/weather status). Ask/`#` turns echo a **`you`** block with what you typed; long pastes fold with a leftover-line note (palette **Show last question** reprints the full text). Catalog commands print immediately and spin `waiting…` until output arrives, so a slow `@weather:now` does not look frozen. Don’t run git from that pane — wezai always uses your shell’s cwd.
 
 ```
 CTRL+SHIFT+P  →  type @git:status  →  Enter
@@ -171,7 +171,14 @@ wezai.apply_to_config(config, {
   -- Dialect (fish/zsh/bash/…) is auto-appended from the active shell pane / $SHELL.
   -- system_prompt = "You are a concise terminal assistant. …",
 
-  ai_pane = { enabled = true, direction = "Right", size_percent = 35, pad_cols = 2 },
+  ai_pane = {
+    enabled = true,
+    direction = "Right",
+    size_percent = 35,
+    pad_cols = 2,
+    question_fold_lines = 8,
+    question_fold_chars = 600,
+  },
   history = {
     max_shell = 20000, -- unique commands indexed (newest first)
     palette_n = 200, -- unified CTRL+SHIFT+P
@@ -213,6 +220,7 @@ plugin/
   init.lua       -- entry, keybindings, ask/edit orchestration
   palette.lua    -- CTRL+SHIFT+P unified palette
   ui.lua         -- output pane, styling, InputSelector
+  fold.lua       -- fold long Ask/Edit questions in the output pane
   session.lua    -- chat memory + pinned @/# files + drafts
   history.lua    -- shell/scrollback history (auto-detect fish/zsh/bash)
   history_store.lua / history_edit.py  -- unique index, fuzzy, fish-style delete

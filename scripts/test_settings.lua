@@ -92,6 +92,15 @@ eq(base.timeout, 300, "default timeout")
 eq(base.weather.country, "US", "default weather country")
 eq(base.keybinding_docker.key, "d", "CTRL+SHIFT+D docker")
 eq(base.docker.confirm_mutate, true, "docker confirm default")
+eq(base.ai_pane.question_fold_lines, 8, "question fold lines")
+eq(base.ai_pane.question_fold_chars, 600, "question fold chars")
+
+local fold_cfg = settings.finalize({
+    ai_pane = { question_fold_lines = 3, question_fold_chars = 120 },
+}, { skip_live_env = true })
+eq(fold_cfg.ai_pane.question_fold_lines, 3, "lua fold lines override")
+eq(fold_cfg.ai_pane.question_fold_chars, 120, "lua fold chars override")
+eq(fold_cfg.ai_pane.size_percent, 35, "fold override keeps size")
 
 -- process-like map wins over file text when passed as env_map after env_text
 local stacked = settings.finalize(nil, {

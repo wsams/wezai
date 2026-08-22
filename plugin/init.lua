@@ -27,6 +27,7 @@ do
         "composer.lua",
         "confirm.lua",
         "version.lua",
+        "fold.lua",
     }
 
     local function file_exists(path)
@@ -349,17 +350,20 @@ local function handle_ai_request(window, shell_pane, prompt, config, opts)
     prompt = prepend_history(window, prompt, config)
     prompt = context.redact(prompt)
 
-    if opts.user_text then
-        session.set_last_question(window, opts.user_text)
-        session.add_turn(window, "user", context.redact(opts.user_text), config.chat_max_turns)
+    local asked = opts.source_line or opts.user_text
+    if asked and tostring(asked):match("%S") then
+        asked = context.redact(asked)
+        session.set_last_question(window, asked)
+        session.add_turn(window, "user", asked, config.chat_max_turns)
         session.push_history_event(
             window,
-            { kind = "ask", text = context.redact(opts.user_text) },
+            { kind = "ask", text = asked },
             (config.history and config.history.max_session) or 50
         )
     end
 
     ui.begin_turn(ai_pane, os.date("%H:%M:%S") .. "  ask")
+    ui.print_question(ai_pane, asked, config)
     local progress = ui.start_progress(ai_pane, config)
     local success, stdout, err, meta = providers.ask(req_config, prompt)
     progress.stop()
@@ -508,18 +512,21 @@ local function handle_edit_request(window, shell_pane, request, config)
     local prompt = prepend_history(window, request.prompt, config)
     prompt = context.redact(prompt)
 
-    if request.user_text then
-        session.set_last_question(window, request.user_text)
-        session.add_turn(window, "user", "EDIT " .. request.target_path .. ": " .. request.user_text, config.chat_max_turns)
+    local asked = request.source_line or request.user_text
+    if asked and tostring(asked):match("%S") then
+        asked = context.redact(asked)
+        session.set_last_question(window, asked)
+        session.add_turn(window, "user", "EDIT " .. (request.target_path or "?") .. ": " .. asked, config.chat_max_turns)
         session.push_history_event(window, {
             kind = "edit",
-            text = request.user_text,
+            text = asked,
             path = request.target_path,
             instruction = request.user_text,
         }, (config.history and config.history.max_session) or 50)
     end
 
     ui.begin_turn(ai_pane, os.date("%H:%M:%S") .. "  edit")
+    ui.print_question(ai_pane, asked, config)
     local progress = ui.start_progress(ai_pane, config)
 
     local edit_config = util.copy_config(config)
@@ -697,6 +704,7 @@ local function dispatch_request(window, shell_pane, request, config, opts)
     handle_ai_request(window, shell_pane, request.prompt, config, {
         share_pane = opts.share_pane,
         user_text = request.user_text,
+        source_line = request.source_line,
     })
 end
 
@@ -1219,6 +1227,16 @@ palette.handlers = {
         else
             ui.ai_print(ai_pane, "Could not copy to clipboard.", "error")
         end
+    end,
+    show_question = function(win, p, cfg)
+        local ai_pane = ui.ensure_ai_pane(win, p, cfg)
+        local q = session.get_last_question(win)
+        if not q then
+            ui.ai_print(ai_pane, "No previous question.", "error")
+            return
+        end
+        ui.begin_turn(ai_pane, os.date("%H:%M:%S") .. "  question")
+        ui.print_question(ai_pane, q, cfg, { unfold = true })
     end,
     shorter = function(win, p, cfg)
         local ai_pane = ui.ensure_ai_pane(win, p, cfg)

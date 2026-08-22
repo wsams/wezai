@@ -9,7 +9,7 @@ Practical examples for every major surface: Ask, the palette, `@git`, `@kube`, `
 | Pane | Role |
 |------|------|
 | **Left (shell)** | Your real terminal. cwd, git repo, commands you run. Stay focused here. |
-| **Right (wezai)** | Output only — answers, diffs, `git status`, terraform validate, docker ps, weather, progress. Not a shell. While Ask/Edit or a catalog command waits, this pane scrolls a spinner / timed status so it does not look frozen. |
+| **Right (wezai)** | Output only — the question you asked, answers, diffs, `git status`, terraform validate, docker ps, weather, progress. Not a shell. While Ask/Edit or a catalog command waits, this pane scrolls a spinner / timed status so it does not look frozen. |
 
 | Entry point | When to use it |
 |-------------|----------------|
@@ -31,6 +31,8 @@ You do **not** need `CTRL+I` before the palette. From the shell: `CTRL+SHIFT+P` 
 CTRL+I splits a **composer** under your shell. The right-hand wezai pane stays visible so you can copy from the last answer. Esc saves a draft; the next CTRL+I restores it. Type `@` or `#` to fuzzy-complete files and directories in the cwd — or start a path with `~/`, `/`, `./`, or `../` to list outside the cwd.
 
 Pinned `@` / `#` files stay in context for follow-up questions until you **Clear**. **Compact** (palette, or type `compact`) shrinks the conversation and sticky selections but keeps those file refs.
+
+Each Ask / `#` edit turn prints a **`you`** block with the line you typed (including `@` / `#` refs) so the log is readable later. Long pastes fold to a short preview plus `… folded N more lines`; palette **Show last question** reprints the full text.
 
 ### Plain questions
 
@@ -146,6 +148,7 @@ Type to fuzzy-filter. Labels start with namespaces so filtering is easy:
 | **Edit file (`#path …`)** | Opens Ask so you can type an edit |
 | **Undo last edit** | Restore last `#` write from its wezai backup (or in-memory prior text if backups are off) |
 | **Copy last command** | Clipboard: last AI command, else shell history, else scrollback |
+| **Show last question** | Reprint the last Ask/`#` line (unfolded) |
 | **Re-ask last question (shorter)** | Same question, shorter answer |
 | **Pick model…** | Switch model for next requests (`models` list / `WEZAI_MODELS`) |
 | **Compact chat (keep @/# files)** | Shrink conversation + sticky selection; keep pinned files |

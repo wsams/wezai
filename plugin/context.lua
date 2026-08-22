@@ -752,6 +752,7 @@ local function confirm_needed(tokens, config)
 end
 
 function M.prepare_request(window, pane, line, selection, config)
+    local source_line = line or ""
     local cwd = util.get_pane_cwd(pane)
     local max_bytes = config.max_file_bytes or 100000
     local parsed = M.parse_at_refs(line or "")
@@ -966,6 +967,7 @@ function M.prepare_request(window, pane, line, selection, config)
             original_content = targets[1] and targets[1].content,
             is_new = is_new_any,
             user_text = instruction,
+            source_line = source_line,
             attach_labels = synth_labels,
             omitted = omitted_all,
             token_estimate = tokens,
@@ -1080,6 +1082,7 @@ function M.prepare_request(window, pane, line, selection, config)
         prompt = prompt,
         files = all,
         user_text = question,
+        source_line = source_line,
         attach_labels = synth_labels,
         omitted = omitted_all,
         token_estimate = tokens,
