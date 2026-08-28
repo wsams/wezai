@@ -1,3 +1,10 @@
+## [1.17.1](https://github.com/wsams/wezai/compare/v1.17.0...v1.17.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* open the Ask composer immediately and reuse one pane ([#32](https://github.com/wsams/wezai/issues/32)) ([e1dcedf](https://github.com/wsams/wezai/commit/e1dcedfdbfddfdca596c1ded430a16dfddd1be89))
+
 # [1.17.0](https://github.com/wsams/wezai/compare/v1.16.0...v1.17.0) (2026-08-22)
 
 
