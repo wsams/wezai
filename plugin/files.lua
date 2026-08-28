@@ -435,6 +435,8 @@ function M.entry_kind(cwd, rel)
 end
 
 --- Write composer candidate list: "F\trel" / "D\trel" lines.
+--- CTRL+I does not call this — composer.py indexes cwd on a background thread
+--- so the input pane can appear immediately.
 function M.write_candidate_list(cwd, config, dest)
     local rels = M.list_relative(cwd, config, { dirs = true })
     local lines = {}

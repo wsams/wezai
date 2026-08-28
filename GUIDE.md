@@ -28,7 +28,7 @@ You do **not** need `CTRL+I` before the palette. From the shell: `CTRL+SHIFT+P` 
 
 ## Ask (`CTRL+I`)
 
-CTRL+I splits a **composer** under your shell. The right-hand wezai pane stays visible so you can copy from the last answer. Esc saves a draft; the next CTRL+I restores it. Type `@` or `#` to fuzzy-complete files and directories in the cwd — or start a path with `~/`, `/`, `./`, or `../` to list outside the cwd.
+CTRL+I splits a **composer** under your shell immediately — file indexing for `@`/`#` continues in the background. The right-hand wezai pane stays visible so you can copy from the last answer. Esc saves a draft; the next CTRL+I restores it (and focuses the existing composer instead of opening a second one). Type `@` or `#` to fuzzy-complete files and directories in the cwd — or start a path with `~/`, `/`, `./`, or `../` to list outside the cwd.
 
 Pinned `@` / `#` files stay in context for follow-up questions until you **Clear**. **Compact** (palette, or type `compact`) shrinks the conversation and sticky selections but keeps those file refs.
 
@@ -610,6 +610,8 @@ CTRL+I → @weather should I bring a jacket tonight?
 | `no pane cwd` | Focus the **shell** pane, not the wezai pane; then open the palette again |
 | Overlay covers the diff / right pane | Edit confirm should split under the shell. Palette → **Update wezai plugin**. Fallback InputSelector (no python3) still covers the tab. |
 | Composer/confirm is a full-window overlay | Needs `python3` plus `plugin/composer.py` / `confirm.py`. The AI pane prints a warning; overlay still works. |
+| CTRL+I feels stuck before the prompt appears | File indexing used to block the split. Update the plugin so the composer opens immediately and indexes in the background. |
+| Two Ask composer panes stacked | A second CTRL+I should focus the existing one. Update the plugin; extras are closed on open. |
 | Palette is WezTerm’s, not wezai | Reload config; wezai overrides `CTRL+SHIFT+P`. Or set `keybinding_palette` |
 | Empty `@history` | Run commands in fish/zsh/bash first; check `history.tail_bytes` / `search_n`. Bash often needs `histappend` (or a `history -a` in `PROMPT_COMMAND`) so the current session is on disk. |
 | `@history` says histfile unsupported | PowerShell (and unknown shells) have no histfile search/delete. Scrollback and session events still list. Use fish/zsh/bash for Delete. |
