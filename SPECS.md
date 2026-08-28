@@ -68,8 +68,8 @@ plugin/
   context.lua       -- @ / # parsing (@@ alias), dir walk, token budget, redaction
   edit.lua          -- wezai dotfile backups, unified diff, apply/undo
   files.lua         -- fuzzy file+dir list (fd → git ls-files → find) + @pick / #pick; ~/ /abs ../
-  composer.lua      -- CTRL+I split composer (does not cover the AI pane)
-  composer.py       -- readline-less TUI: live @/# fuzzy paths (cwd + ~/ / ../), draft, OSC user vars
+  composer.lua      -- CTRL+I split composer (instant open, one pane per tab, AI pane stays visible)
+  composer.py       -- readline-less TUI: background cwd index, live @/# fuzzy paths, draft, OSC user vars
   confirm.lua       -- Apply/Cancel split of the shell pane (AI pane stays visible)
   confirm.py        -- readline-less TUI: a/c Apply/Cancel via OSC user var
   history.lua       -- fish/zsh/bash history palette, native fish + histfile backends
@@ -112,6 +112,12 @@ Node/`package.json` is for semantic-release tooling. At runtime the Lua plugin p
 - `ui.ensure_ai_pane` must **never** spawn a second AI pane if one already exists in the tab.
 - Detection: remembered pane id + process fingerprint (`WEZAI_OUTPUT_PANE` / sleep loop) + scrollback heuristics.
 - `spawn_ai_pane` must re-scan the tab and skip split if an AI pane is found.
+
+### 4.2.1 Composer pane reuse
+
+- `composer.open` must **never** spawn a second Ask composer if one already exists in the tab.
+- Detection: in-flight `opening` lock + remembered pane id + process fingerprint (`WEZAI_COMPOSER_PANE` / `composer.py`). Extra composer panes are closed; CTRL+I focuses the existing one (including after config reload).
+- The composer UI must appear **immediately**. Do not block the split on `fd` / `git ls-files` / `find` or per-path `test -d`. Cwd `@`/`#` candidates load on a background thread in `composer.py` (shallow cwd names first, then the full tree). User vars from a leftover composer pane must not cancel the live one.
 
 ### 4.3 Provider API
 
@@ -185,7 +191,7 @@ Flow: **composer pane** (split of the shell, AI log stays visible) → parse ref
 
 **Question echo:** Ask and `#` edit print whatever was typed (`source_line` when present, else `user_text`) under a `you` label after the turn rule, before progress. Long pastes fold to the first `ai_pane.question_fold_lines` lines / `question_fold_chars` (defaults 8 / 600); leftover lines show as `… folded N more lines (M chars)`. The write-only pane cannot interactively expand — palette **Show last question** reprints the full text. Secrets are redacted the same way as the prompt. Catalog AI helpers echo their `user_text` tag (`git:msg`, `kube:diagnose`, …).
 
-If `composer.enabled = false` or python3/`composer.py` is missing, fall back to WezTerm `PromptInputLine` (full-window overlay). Esc in the composer **saves a draft** and restores it on the next CTRL+I.
+If `composer.enabled = false` or python3/`composer.py` is missing, fall back to WezTerm `PromptInputLine` (full-window overlay). Esc in the composer **saves a draft** and restores it on the next CTRL+I. A second CTRL+I focuses the open composer (it does not split another input pane). File matches for `@`/`#` fill in as the cwd tree is indexed in the background; the prompt is usable immediately.
 
 Supports:
 
@@ -533,7 +539,7 @@ WezTerm Lua has no `debug.getinfo`. `init.lua` locates the plugin dir by scannin
 - [ ] `@plugin/` walks the directory; oversized packs confirm before send.
 - [ ] `#notes.txt sort lines` (and legacy `@@notes.txt`) shows diff confirm.
 - [ ] `#newfile.txt create lorem` creates file after Apply/Create.
-- [ ] CTRL+I composer splits the **shell** pane (AI log on the right stays visible); Esc restores a draft.
+- [ ] CTRL+I composer splits the **shell** pane **immediately** (AI log on the right stays visible); Esc restores a draft; a second CTRL+I focuses the same composer (no duplicate input pane). @/# matches may start shallow and then include nested files once indexing finishes.
 - [ ] Typing `@` / `#` in the composer lists cwd files/dirs; `@~/…`, `@/abs`, `@../` list those trees; Tab completes.
 - [ ] Compact keeps `@`/`#` pins and drops conversation / sticky selection.
 - [ ] Clear drops pins and chat.

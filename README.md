@@ -6,7 +6,7 @@
 
 - Ask questions with file, directory, clipboard, git, kube, terraform, docker, weather, and selection context  
 - Edit files in one pass (`#path`, legacy `@@path`) with a unified diff confirm and wezai dotfile backups  
-- CTRL+I composer keeps the AI log visible; `@` / `#` fuzzy-complete cwd paths plus `~/`, `/abs`, `../`; context persists until Compact/Clear  
+- CTRL+I composer opens instantly (file index loads in the background) and keeps the AI log visible; `@` / `#` fuzzy-complete cwd paths plus `~/`, `/abs`, `../`; context persists until Compact/Clear  
 - One palette (`CTRL+SHIFT+P`) for Ask helpers, `@git:…`, `@kube:…`, `@tf:…`, `@docker:…`, `@weather:…`, and `@history`  
 
 - Shell-aware suggestions, secret redaction, risky-command confirms  

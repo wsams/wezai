@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import termios
+import threading
 import time
 import tty
 from typing import Dict, List, Optional, Tuple
@@ -92,7 +93,7 @@ def emit_user_var(name: str, value: str) -> None:
 
 
 def load_candidates(path: Optional[str]) -> List[Tuple[str, str]]:
-    """Return list of (kind, relpath) where kind is F or D."""
+    """Return list of (kind, relpath) where kind is F or D. Empty if path missing."""
     out: List[Tuple[str, str]] = []
     if path and os.path.isfile(path):
         try:
@@ -111,20 +112,26 @@ def load_candidates(path: Optional[str]) -> List[Tuple[str, str]]:
                         out.append((kind, rel))
         except OSError:
             pass
-    if out:
-        return out
-    # Fallback: shallow names in cwd
+    return out
+
+
+def shallow_cwd_candidates(cwd: Optional[str] = None) -> List[Tuple[str, str]]:
+    """Instant first paint: names in cwd only (no tree walk)."""
+    out: List[Tuple[str, str]] = []
+    root = cwd or "."
     try:
-        for name in sorted(os.listdir(".")):
-            if name.startswith(".") and name not in (".github", ".config"):
-                continue
-            if "wezai" in name and name.endswith(".bak"):
-                continue
-            kind = "D" if os.path.isdir(name) else "F"
-            shown = name + ("/" if kind == "D" else "")
-            out.append((kind, shown))
+        names = sorted(os.listdir(root))
     except OSError:
-        pass
+        return out
+    for name in names:
+        if name.startswith(".") and name not in (".github", ".config"):
+            continue
+        if "wezai" in name and name.endswith(".bak"):
+            continue
+        abs_path = os.path.join(root, name)
+        kind = "D" if os.path.isdir(abs_path) else "F"
+        shown = name + ("/" if kind == "D" else "")
+        out.append((kind, shown))
     return out
 
 
@@ -229,14 +236,16 @@ def split_outside_query(query: str, cwd: str) -> Tuple[str, str]:
     return cwd, query
 
 
-def _collect_os_walk(root: str, limit: int, max_depth: int) -> List[Tuple[str, str]]:
+def _collect_os_walk(
+    root: str, limit: int, max_depth: Optional[int]
+) -> List[Tuple[str, str]]:
     out: List[Tuple[str, str]] = []
     root = os.path.normpath(root)
     try:
         for dirpath, dirnames, filenames in os.walk(root):
             rel_dir = os.path.relpath(dirpath, root)
             depth = 0 if rel_dir in (".", "") else rel_dir.count(os.sep) + 1
-            if depth >= max_depth:
+            if max_depth is not None and depth >= max_depth:
                 dirnames[:] = []
             keep_dirs = []
             for name in dirnames:
@@ -245,12 +254,12 @@ def _collect_os_walk(root: str, limit: int, max_depth: int) -> List[Tuple[str, s
                 if should_skip_rel(rel_p):
                     continue
                 keep_dirs.append(name)
-                if depth + 1 <= max_depth:
+                if max_depth is None or depth + 1 <= max_depth:
                     out.append(("D", os.path.join(dirpath, name)))
                     if len(out) >= limit:
                         return out
             dirnames[:] = keep_dirs
-            if depth >= max_depth:
+            if max_depth is not None and depth >= max_depth:
                 continue
             for name in filenames:
                 rel = name if rel_dir in (".", "") else os.path.join(rel_dir, name)
@@ -265,7 +274,9 @@ def _collect_os_walk(root: str, limit: int, max_depth: int) -> List[Tuple[str, s
     return out
 
 
-def _collect_fd(root: str, limit: int, max_depth: int) -> Optional[List[Tuple[str, str]]]:
+def _collect_fd(
+    root: str, limit: int, max_depth: Optional[int]
+) -> Optional[List[Tuple[str, str]]]:
     fd = shutil.which("fd") or shutil.which("fdfind")
     if not fd:
         return None
@@ -282,13 +293,10 @@ def _collect_fd(root: str, limit: int, max_depth: int) -> Optional[List[Tuple[st
         "f",
         "--type",
         "d",
-        "--max-depth",
-        str(max_depth),
-        "--max-results",
-        str(limit),
-        ".",
-        root,
     ]
+    if max_depth is not None:
+        args.extend(["--max-depth", str(max_depth)])
+    args.extend(["--max-results", str(limit), ".", root])
     try:
         proc = subprocess.run(args, capture_output=True, text=True, check=False)
     except OSError:
@@ -306,6 +314,82 @@ def _collect_fd(root: str, limit: int, max_depth: int) -> Optional[List[Tuple[st
             continue
         kind = "D" if os.path.isdir(abs_path) else "F"
         out.append((kind, abs_path))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _collect_git(root: str, limit: int) -> Optional[List[Tuple[str, str]]]:
+    git = shutil.which("git")
+    if not git:
+        return None
+    try:
+        proc = subprocess.run(
+            [
+                git,
+                "-C",
+                root,
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+            ],
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0 or not proc.stdout:
+        return None
+    out: List[Tuple[str, str]] = []
+    seen = set()
+
+    def add(rel: str, kind: str) -> bool:
+        rel_p = _posix(rel).strip("/")
+        if not rel_p or rel_p in seen or should_skip_rel(rel_p):
+            return False
+        seen.add(rel_p)
+        abs_path = os.path.join(root, rel_p)
+        out.append((kind, abs_path))
+        return len(out) >= limit
+
+    for raw in proc.stdout.split(b"\0"):
+        if not raw:
+            continue
+        rel = raw.decode("utf-8", errors="replace")
+        if add(rel, "F"):
+            return out
+        acc = ""
+        for part in rel.replace("\\", "/").split("/")[:-1]:
+            acc = part if not acc else acc + "/" + part
+            if add(acc, "D"):
+                return out
+    return out
+
+
+def collect_cwd_candidates(cwd: str, limit: int) -> List[Tuple[str, str]]:
+    """Full cwd tree for @/# matches. Call from a background thread."""
+    root = os.path.normpath(cwd or ".")
+    listed = _collect_fd(root, limit, None) or _collect_git(root, limit)
+    if listed is None:
+        listed = _collect_os_walk(root, limit, None)
+    out: List[Tuple[str, str]] = []
+    seen = set()
+    for kind, abs_path in listed:
+        try:
+            rel = os.path.relpath(abs_path, root)
+        except ValueError:
+            rel = abs_path
+        shown = _posix(rel)
+        if shown in (".", ""):
+            continue
+        if kind == "D" and not shown.endswith("/"):
+            shown = shown + "/"
+        if shown in seen:
+            continue
+        seen.add(shown)
+        out.append((kind, shown))
         if len(out) >= limit:
             break
     return out
@@ -538,21 +622,63 @@ def accept_match(buf: List[str], cursor: int, op: str, rel: str, token_start: in
     return new, new_cursor
 
 
+def _parse_max_candidates() -> int:
+    raw = os.environ.get("WEZAI_MAX_CANDIDATES") or ""
+    try:
+        n = int(raw)
+    except ValueError:
+        n = 400
+    return max(50, min(n, 4000))
+
+
+def _background_load(
+    shared: dict, lock: threading.Lock, cand_path: str, cwd: str, limit: int
+) -> None:
+    loaded = load_candidates(cand_path)
+    if len(loaded) < 8:
+        loaded = collect_cwd_candidates(cwd, limit) or loaded or shallow_cwd_candidates(cwd)
+    with lock:
+        shared["list"] = loaded
+        shared["gen"] = shared["gen"] + 1
+        shared["loading"] = False
+
+
 def run() -> int:
     cand_path = os.environ.get("WEZAI_CANDIDATES") or (sys.argv[1] if len(sys.argv) > 1 else "")
     hint = os.environ.get("WEZAI_HINT") or ""
     draft = os.environ.get("WEZAI_DRAFT") or ""
     cwd = os.environ.get("WEZAI_CWD") or os.getcwd()
+    limit = _parse_max_candidates()
     try:
         os.chdir(cwd)
     except OSError:
         pass
 
-    candidates = load_candidates(cand_path)
+    # Instant first paint (cwd names only); full tree fills in on a daemon thread.
+    lock = threading.Lock()
+    shared: dict = {
+        "list": shallow_cwd_candidates(cwd),
+        "gen": 1,
+        "loading": True,
+    }
+    loader = threading.Thread(
+        target=_background_load,
+        args=(shared, lock, cand_path, cwd, limit),
+        daemon=True,
+        name="wezai-composer-cands",
+    )
+    loader.start()
+
     buf = list(draft)
     cursor = len(buf)
     sel = 0
     last_emitted = draft
+    last_gen = 0
+    dirty = True
+    matches: List[Tuple[str, str, int]] = []
+    op: Optional[str] = None
+    ref: Optional[Tuple[str, str, int]] = None
+    token_start = 0
 
     if not sys.stdin.isatty():
         # Non-interactive fallback
@@ -566,33 +692,51 @@ def run() -> int:
         tty.setraw(fd)
         sys.stdout.write("\033[?25h")  # show cursor
         while True:
-            ref = current_ref(buf, cursor)
-            matches: List[Tuple[str, str, int]] = []
-            op = None
-            query = ""
-            token_start = 0
-            show_drop = False
-            if ref:
-                op, query, token_start = ref
-                if not is_reserved_path(query):
-                    matches = filter_matches(
-                        query, candidates, "@" if op == "@" else "#", MAX_DROP * 2, cwd
-                    )
-                    show_drop = True
-                    if sel >= len(matches):
-                        sel = max(0, len(matches) - 1)
-            else:
-                sel = 0
+            with lock:
+                candidates = shared["list"]
+                gen = shared["gen"]
+                loading = shared["loading"]
+            if gen != last_gen:
+                dirty = True
+                last_gen = gen
 
-            note = "draft saved on Esc" if buf else "empty — Esc cancels"
-            render(buf, cursor, matches, sel, hint, op if show_drop else None, note)
+            if dirty:
+                ref = current_ref(buf, cursor)
+                matches: List[Tuple[str, str, int]] = []
+                op = None
+                query = ""
+                token_start = 0
+                show_drop = False
+                if ref:
+                    op, query, token_start = ref
+                    if not is_reserved_path(query):
+                        matches = filter_matches(
+                            query, candidates, "@" if op == "@" else "#", MAX_DROP * 2, cwd
+                        )
+                        show_drop = True
+                        if sel >= len(matches):
+                            sel = max(0, len(matches) - 1)
+                else:
+                    sel = 0
 
-            line_now = "".join(buf)
-            if line_now != last_emitted:
-                emit_user_var("WEZAI_DRAFT", line_now)
-                last_emitted = line_now
+                note = "draft saved on Esc" if buf else "empty — Esc cancels"
+                if loading and not show_drop:
+                    note = "indexing files…  " + note
+                render(buf, cursor, matches, sel, hint, op if show_drop else None, note)
+
+                line_now = "".join(buf)
+                if line_now != last_emitted:
+                    emit_user_var("WEZAI_DRAFT", line_now)
+                    last_emitted = line_now
+                dirty = False
+
+            timeout = 0.05 if loading else None
+            ready, _, _ = select.select([sys.stdin], [], [], timeout)
+            if not ready:
+                continue
 
             key = read_key()
+            dirty = True
             if key in ("\x03", "\x1b"):  # Ctrl-C or Esc
                 emit_user_var("WEZAI_DRAFT", "".join(buf))
                 emit_user_var("WEZAI_CANCEL", "1")
@@ -737,6 +881,21 @@ def _self_test() -> int:
         root, filt = split_outside_query("../other/no", cwd)
         assert os.path.normpath(root) == os.path.normpath(sibling), (root, filt)
         assert filt.startswith("no"), filt
+
+        shallow = shallow_cwd_candidates(cwd)
+        assert any(rel in ("README.md", "src/") for _, rel in shallow), shallow
+        full = collect_cwd_candidates(cwd, 50)
+        assert any("main.py" in rel for _, rel in full), full
+        assert load_candidates("/no/such/wezai.cand") == []
+        empty_cand = os.path.join(tmp, "empty.cand")
+        open(empty_cand, "w", encoding="utf-8").write("")
+        assert load_candidates(empty_cand) == []
+        shared = {"list": [], "gen": 0, "loading": True}
+        lock = threading.Lock()
+        _background_load(shared, lock, empty_cand, cwd, 50)
+        assert shared["loading"] is False
+        assert shared["gen"] == 1
+        assert any("main.py" in rel for _, rel in shared["list"]), shared["list"]
 
     print("composer self-test ok")
     return 0
